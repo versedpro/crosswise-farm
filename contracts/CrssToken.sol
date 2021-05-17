@@ -8,8 +8,8 @@ import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 
-// PantherToken with Governance.
-contract PantherToken is BEP20 {
+// CrssToken with Governance.
+contract CrssToken is BEP20 {
     // Transfer tax rate in basis points. (default 5%)
     uint16 public transferTaxRate = 500;
     // Burn rate % of transfer tax. (default 20% x 5% = 1% of total amount).
@@ -25,12 +25,12 @@ contract PantherToken is BEP20 {
     mapping(address => bool) private _excludedFromAntiWhale;
     // Automatic swap and liquify enabled
     bool public swapAndLiquifyEnabled = false;
-    // Min amount to liquify. (default 500 PANTHERs)
+    // Min amount to liquify. (default 500 CRSSs)
     uint256 public minAmountToLiquify = 500 ether;
-    // The swap router, modifiable. Will be changed to PantherSwap's router when our own AMM release
-    IUniswapV2Router02 public pantherSwapRouter;
+    // The swap router, modifiable. Will be changed to Crosswise's router when our own AMM release
+    IUniswapV2Router02 public crssSwapRouter;
     // The trading pair
-    address public pantherSwapPair;
+    address public crssSwapPair;
     // In swap and liquify
     bool private _inSwapAndLiquify;
 
@@ -44,7 +44,7 @@ contract PantherToken is BEP20 {
     event MaxTransferAmountRateUpdated(address indexed operator, uint256 previousRate, uint256 newRate);
     event SwapAndLiquifyEnabledUpdated(address indexed operator, bool enabled);
     event MinAmountToLiquifyUpdated(address indexed operator, uint256 previousAmount, uint256 newAmount);
-    event PantherSwapRouterUpdated(address indexed operator, address indexed router, address indexed pair);
+    event crssSwapRouterUpdated(address indexed operator, address indexed router, address indexed pair);
     event SwapAndLiquify(uint256 tokensSwapped, uint256 ethReceived, uint256 tokensIntoLiqudity);
 
     modifier onlyOperator() {
@@ -58,7 +58,7 @@ contract PantherToken is BEP20 {
                 _excludedFromAntiWhale[sender] == false
                 && _excludedFromAntiWhale[recipient] == false
             ) {
-                require(amount <= maxTransferAmount(), "PANTHER::antiWhale: Transfer amount exceeds the maxTransferAmount");
+                require(amount <= maxTransferAmount(), "CRSS::antiWhale: Transfer amount exceeds the maxTransferAmount");
             }
         }
         _;
@@ -78,9 +78,9 @@ contract PantherToken is BEP20 {
     }
 
     /**
-     * @notice Constructs the PantherToken contract.
+     * @notice Constructs the CrssToken contract.
      */
-    constructor() public BEP20("PantherSwap Token", "PANTHER") {
+    constructor() public BEP20("Crosswise Token", "CRSS") {
         _operator = _msgSender();
         emit OperatorTransferred(address(0), _operator);
 
@@ -96,15 +96,15 @@ contract PantherToken is BEP20 {
         _moveDelegates(address(0), _delegates[_to], _amount);
     }
 
-    /// @dev overrides transfer function to meet tokenomics of PANTHER
+    /// @dev overrides transfer function to meet tokenomics of CRSS
     function _transfer(address sender, address recipient, uint256 amount) internal virtual override antiWhale(sender, recipient, amount) {
         // swap and liquify
         if (
             swapAndLiquifyEnabled == true
             && _inSwapAndLiquify == false
-            && address(pantherSwapRouter) != address(0)
-            && pantherSwapPair != address(0)
-            && sender != pantherSwapPair
+            && address(crssSwapRouter) != address(0)
+            && crssSwapPair != address(0)
+            && sender != crssSwapPair
             && sender != owner()
         ) {
             swapAndLiquify();
@@ -117,11 +117,11 @@ contract PantherToken is BEP20 {
             uint256 taxAmount = amount.mul(transferTaxRate).div(10000);
             uint256 burnAmount = taxAmount.mul(burnRate).div(100);
             uint256 liquidityAmount = taxAmount.sub(burnAmount);
-            require(taxAmount == burnAmount + liquidityAmount, "PANTHER::transfer: Burn value invalid");
+            require(taxAmount == burnAmount + liquidityAmount, "CRSS::transfer: Burn value invalid");
 
             // default 95% of transfer sent to recipient
             uint256 sendAmount = amount.sub(taxAmount);
-            require(amount == sendAmount + taxAmount, "PANTHER::transfer: Tax value invalid");
+            require(amount == sendAmount + taxAmount, "CRSS::transfer: Tax value invalid");
 
             super._transfer(sender, BURN_ADDRESS, burnAmount);
             super._transfer(sender, address(this), liquidityAmount);
@@ -165,15 +165,15 @@ contract PantherToken is BEP20 {
 
     /// @dev Swap tokens for eth
     function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the pantherSwap pair path of token -> weth
+        // generate the Crosswise pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = pantherSwapRouter.WETH();
+        path[1] = crssSwapRouter.WETH();
 
-        _approve(address(this), address(pantherSwapRouter), tokenAmount);
+        _approve(address(this), address(crssSwapRouter), tokenAmount);
 
         // make the swap
-        pantherSwapRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        crssSwapRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
             0, // accept any amount of ETH
             path,
@@ -185,10 +185,10 @@ contract PantherToken is BEP20 {
     /// @dev Add liquidity
     function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
         // approve token transfer to cover all possible scenarios
-        _approve(address(this), address(pantherSwapRouter), tokenAmount);
+        _approve(address(this), address(crssSwapRouter), tokenAmount);
 
         // add the liquidity
-        pantherSwapRouter.addLiquidityETH{value: ethAmount}(
+        crssSwapRouter.addLiquidityETH{value: ethAmount}(
             address(this),
             tokenAmount,
             0, // slippage is unavoidable
@@ -212,7 +212,7 @@ contract PantherToken is BEP20 {
         return _excludedFromAntiWhale[_account];
     }
 
-    // To receive BNB from pantherSwapRouter when swapping
+    // To receive BNB from crssSwapRouter when swapping
     receive() external payable {}
 
     /**
@@ -220,7 +220,7 @@ contract PantherToken is BEP20 {
      * Can only be called by the current operator.
      */
     function updateTransferTaxRate(uint16 _transferTaxRate) public onlyOperator {
-        require(_transferTaxRate <= MAXIMUM_TRANSFER_TAX_RATE, "PANTHER::updateTransferTaxRate: Transfer tax rate must not exceed the maximum rate.");
+        require(_transferTaxRate <= MAXIMUM_TRANSFER_TAX_RATE, "CRSS::updateTransferTaxRate: Transfer tax rate must not exceed the maximum rate.");
         emit TransferTaxRateUpdated(msg.sender, transferTaxRate, _transferTaxRate);
         transferTaxRate = _transferTaxRate;
     }
@@ -230,7 +230,7 @@ contract PantherToken is BEP20 {
      * Can only be called by the current operator.
      */
     function updateBurnRate(uint16 _burnRate) public onlyOperator {
-        require(_burnRate <= 100, "PANTHER::updateBurnRate: Burn rate must not exceed the maximum rate.");
+        require(_burnRate <= 100, "CRSS::updateBurnRate: Burn rate must not exceed the maximum rate.");
         emit BurnRateUpdated(msg.sender, burnRate, _burnRate);
         burnRate = _burnRate;
     }
@@ -240,7 +240,7 @@ contract PantherToken is BEP20 {
      * Can only be called by the current operator.
      */
     function updateMaxTransferAmountRate(uint16 _maxTransferAmountRate) public onlyOperator {
-        require(_maxTransferAmountRate <= 10000, "PANTHER::updateMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
+        require(_maxTransferAmountRate <= 10000, "CRSS::updateMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
         emit MaxTransferAmountRateUpdated(msg.sender, maxTransferAmountRate, _maxTransferAmountRate);
         maxTransferAmountRate = _maxTransferAmountRate;
     }
@@ -275,11 +275,11 @@ contract PantherToken is BEP20 {
      * @dev Update the swap router.
      * Can only be called by the current operator.
      */
-    function updatePantherSwapRouter(address _router) public onlyOperator {
-        pantherSwapRouter = IUniswapV2Router02(_router);
-        pantherSwapPair = IUniswapV2Factory(pantherSwapRouter.factory()).getPair(address(this), pantherSwapRouter.WETH());
-        require(pantherSwapPair != address(0), "PANTHER::updatePantherSwapRouter: Invalid pair address.");
-        emit PantherSwapRouterUpdated(msg.sender, address(pantherSwapRouter), pantherSwapPair);
+    function updatecrssSwapRouter(address _router) public onlyOperator {
+        crssSwapRouter = IUniswapV2Router02(_router);
+        crssSwapPair = IUniswapV2Factory(crssSwapRouter.factory()).getPair(address(this), crssSwapRouter.WETH());
+        require(crssSwapPair != address(0), "CRSS::updatecrssSwapRouter: Invalid pair address.");
+        emit crssSwapRouterUpdated(msg.sender, address(crssSwapRouter), crssSwapPair);
     }
 
     /**
@@ -294,7 +294,7 @@ contract PantherToken is BEP20 {
      * Can only be called by the current operator.
      */
     function transferOperator(address newOperator) public onlyOperator {
-        require(newOperator != address(0), "PANTHER::transferOperator: new operator is the zero address");
+        require(newOperator != address(0), "CRSS::transferOperator: new operator is the zero address");
         emit OperatorTransferred(_operator, newOperator);
         _operator = newOperator;
     }
@@ -401,9 +401,9 @@ contract PantherToken is BEP20 {
         );
 
         address signatory = ecrecover(digest, v, r, s);
-        require(signatory != address(0), "PANTHER::delegateBySig: invalid signature");
-        require(nonce == nonces[signatory]++, "PANTHER::delegateBySig: invalid nonce");
-        require(now <= expiry, "PANTHER::delegateBySig: signature expired");
+        require(signatory != address(0), "CRSS::delegateBySig: invalid signature");
+        require(nonce == nonces[signatory]++, "CRSS::delegateBySig: invalid nonce");
+        require(now <= expiry, "CRSS::delegateBySig: signature expired");
         return _delegate(signatory, delegatee);
     }
 
@@ -433,7 +433,7 @@ contract PantherToken is BEP20 {
         view
         returns (uint256)
     {
-        require(blockNumber < block.number, "PANTHER::getPriorVotes: not yet determined");
+        require(blockNumber < block.number, "CRSS::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
@@ -470,7 +470,7 @@ contract PantherToken is BEP20 {
         internal
     {
         address currentDelegate = _delegates[delegator];
-        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying PANTHERs (not scaled);
+        uint256 delegatorBalance = balanceOf(delegator); // balance of underlying CRSSs (not scaled);
         _delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);
@@ -506,7 +506,7 @@ contract PantherToken is BEP20 {
     )
         internal
     {
-        uint32 blockNumber = safe32(block.number, "PANTHER::_writeCheckpoint: block number exceeds 32 bits");
+        uint32 blockNumber = safe32(block.number, "CRSS::_writeCheckpoint: block number exceeds 32 bits");
 
         if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
             checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;

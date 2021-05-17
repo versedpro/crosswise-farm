@@ -2,7 +2,7 @@
 
 pragma solidity 0.6.12;
 
-interface IPantherReferral {
+interface ICrssReferral {
     /**
      * @dev Record referral.
      */

@@ -4,10 +4,10 @@ pragma solidity 0.6.12;
 
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
-import "./libs/IPantherReferral.sol";
+import "./libs/ICrssReferral.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract PantherReferral is IPantherReferral, Ownable {
+contract CrssReferral is ICrssReferral, Ownable {
     using SafeBEP20 for IBEP20;
 
     mapping(address => bool) public operators;
