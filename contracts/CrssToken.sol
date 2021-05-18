@@ -67,7 +67,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         _symbol = "CRSS";
         _decimals = 18;
 
-        taxFee = 40; // 0.03%
+        taxFee = 40; // 0.04%
         _previousTaxFee = taxFee;
 
         liquidityFee = 60; // 0.02%: 0.03% liquidity + 0.03% burn
