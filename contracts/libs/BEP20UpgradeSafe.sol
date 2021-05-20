@@ -5,6 +5,9 @@ pragma solidity 0.6.12;
 import "./IBEP20.sol";
 import "./Initializable.sol";
 import "./ContextUpgradeSafe.sol";
+
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 /**
  * @dev Implementation of the {IBEP20} interface.
  *

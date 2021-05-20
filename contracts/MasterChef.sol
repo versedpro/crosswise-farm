@@ -267,7 +267,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
 
                 // send rewards
-                safeCRSSTransfer(msg.sender, totalRewards);
+                safeCrssTransfer(msg.sender, totalRewards);
                 payReferralCommission(msg.sender, totalRewards);
             }
         } else if (pending > 0) {

@@ -3,6 +3,7 @@
 pragma solidity 0.6.12;
 
 import "./libs/IBEP20.sol";
+import "./libs/OwnableUpgradeSafe.sol";
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
@@ -12,7 +13,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
-contract CrssToken is Context, IBEP20, Ownable {
+contract CrssToken is IBEP20, OwnableUpgradeSafe {
     using SafeMath for uint256;
     using Address for address;
 
@@ -70,7 +71,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         taxFee = 40; // 0.04%
         _previousTaxFee = taxFee;
 
-        liquidityFee = 60; // 0.02%: 0.03% liquidity + 0.03% burn
+        liquidityFee = 60; // 0.06%: 0.03% liquidity + 0.03% burn
         _previousLiquidityFee = liquidityFee;
 
         addLiquidityEnabled = false;
@@ -114,6 +115,8 @@ contract CrssToken is Context, IBEP20, Ownable {
         return tokenFromReflection(_rOwned[account]);
     }
 
+    
+
     function transfer(address recipient, uint256 amount) public override returns (bool) {
         _transfer(_msgSender(), recipient, amount);
         return true;
@@ -136,6 +139,10 @@ contract CrssToken is Context, IBEP20, Ownable {
         _transfer(sender, recipient, amount);
         _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "BEP20: transfer amount exceeds allowance"));
         return true;
+    }
+
+    function mint(address _to, uint256 _amount) public {
+        _mint(_to, _amount);
     }
 
     /**
@@ -229,6 +236,19 @@ contract CrssToken is Context, IBEP20, Ownable {
         }
     }
 
+    function _mint(address account, uint256 tAmount) internal {
+        require(account != address(0), "BEP20: mint to the zero address");
+
+        _tTotal = _tTotal.add(tAmount);
+        _rTotal = MAX - (MAX % _tTotal);
+
+        (uint256 rAmount, , , , , ) = _getValues(tAmount);
+        _rOwned[account] = _rOwned[account].add(rAmount);
+        require(_rOwned[account] <= _rTotal, "user reward token should less then total reward amount");
+        
+        emit Transfer(address(0), account, tAmount);
+    }
+
     function _transferBothExcluded(
         address sender,
         address recipient,
@@ -264,11 +284,11 @@ contract CrssToken is Context, IBEP20, Ownable {
         taxFee = _taxFee;
     }
 
-    function setLiquidityFeePercent(uint256 _liquidityFee) external onlyOwner() {
+    function setLiquidityFeePercent(uint256 _liquidityFee) external onlyOwner {
         liquidityFee = _liquidityFee;
     }
 
-    function setMaxTxPercent(uint256 _maxTxPercent) external onlyOwner() {
+    function setMaxTxPercent(uint256 _maxTxPercent) external onlyOwner {
         maxTxAmount = _tTotal.mul(_maxTxPercent).div(100000);
     }
 
@@ -420,13 +440,13 @@ contract CrssToken is Context, IBEP20, Ownable {
 
         if (addLiquidityEnabled && (contractTokenBalance >= numTokensSellToAddToLiquidity)) {
             //add liquidity
-            console.log("contractTokenBalance = %s", balanceOf(address(this)));
-            console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
-            console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
+            // console.log("contractTokenBalance = %s", balanceOf(address(this)));
+            // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
+            // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
             _tokenTransfer(address(this), liquidityFund, contractTokenBalance, false);
-            console.log("contractTokenBalance = %s", balanceOf(address(this)));
-            console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
-            console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
+            // console.log("contractTokenBalance = %s", balanceOf(address(this)));
+            // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
+            // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
             emit SendToLiquidityFund(liquidityFund, contractTokenBalance);
         }
 
