@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./CrssToken.sol";
+import "./xCrssToken.sol";
 
 // MasterChef is the master of Crss. He can make Crss and he is a fair guy.
 //
@@ -27,7 +28,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 amount;         // How many LP tokens the user has provided.
         uint256 rewardDebt;     // Reward debt. See explanation below.
         uint256 rewardLockedUp;  // Reward locked up.
-        uint256 nextHarvestUntil; // When can the user harvest again.
+        // uint256 nextHarvestUntil; // When can the user harvest again.
         //
         // We do some fancy math here. Basically, any point in time, the amount of CRSSs
         // entitled to a user but is pending to be distributed is:
@@ -53,10 +54,12 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // The CRSS TOKEN!
     CrssToken public crss;
+    // The XCRSS TOKEN!
+    xCrssToken public xCrss;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
-    address public feeAddress;
+    address public treasuryAddress;
     // CRSS tokens created per block.
     uint256 public crssPerBlock;
     // Bonus muliplier for early crss makers.
@@ -91,15 +94,25 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     constructor(
         CrssToken _crss,
+        xCrssToken _xCrss,
+        address _devAddress,
+        address _treasuryAddress,
         uint256 _startBlock,
         uint256 _crssPerBlock
     ) public {
+        require(address(_crss) != address(0), "constructor: crss token address is zero address");
+        require(address(_xCrss) != address(0), "constructor: xcrss token address is zero address");
+        require(_devAddress != address(0), "constructor: dev address is zero address");
+        require(_treasuryAddress != address(0), "constructor: treasury address is zero address");
+        
+
         crss = _crss;
+        xCrss = _xCrss;
         startBlock = _startBlock;
         crssPerBlock = _crssPerBlock;
 
-        devAddress = msg.sender;
-        feeAddress = msg.sender;
+        devAddress = _devAddress;
+        treasuryAddress = _treasuryAddress;
     }
 
     function poolLength() external view returns (uint256) {
@@ -159,12 +172,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         return pending.add(user.rewardLockedUp);
     }
 
-    // View function to see if user can harvest CRSSs.
-    function canHarvest(uint256 _pid, address _user) public view returns (bool) {
-        UserInfo storage user = userInfo[_pid][_user];
-        return block.timestamp >= user.nextHarvestUntil;
-    }
-
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
         uint256 length = poolInfo.length;
@@ -203,13 +210,17 @@ contract MasterChef is Ownable, ReentrancyGuard {
         payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-            if (address(pool.lpToken) == address(crss)) {
-                uint256 transferTax = _amount.mul(crss.transferTaxRate()).div(10000);
-                _amount = _amount.sub(transferTax);
-            }
+
+            // Once deposit token is Crss.
+            // if (address(pool.lpToken) == address(crss)) {
+            //     uint256 transferTax = _amount.mul(400).div(10000);
+            //     _amount = _amount.sub(transferTax);
+            // }
+            
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
-                pool.lpToken.safeTransfer(feeAddress, depositFee);
+                pool.lpToken.safeTransfer(treasuryAddress, depositFee.mul(50).div(100));
+                pool.lpToken.safeTransfer(devAddress, depositFee.mul(50).div(100));
                 user.amount = user.amount.add(_amount).sub(depositFee);
             } else {
                 user.amount = user.amount.add(_amount);
@@ -242,7 +253,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
-        user.nextHarvestUntil = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
@@ -252,28 +262,21 @@ contract MasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
-        if (user.nextHarvestUntil == 0) {
-            user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
-        }
-
-        uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
-        if (canHarvest(_pid, msg.sender)) {
-            if (pending > 0 || user.rewardLockedUp > 0) {
-                uint256 totalRewards = pending.add(user.rewardLockedUp);
-
-                // reset lockup
-                totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
-                user.rewardLockedUp = 0;
-                user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
-
+        if(user.amount > 0)
+        {
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+            if (pending > 0) {
                 // send rewards
-                safeCrssTransfer(msg.sender, totalRewards);
-                payReferralCommission(msg.sender, totalRewards);
+                uint256 crssReward = pending.div(2);
+                uint256 xCrssReward = pending.div(2);
+
+                safeCrssTransfer(msg.sender, crssReward);
+
+                crss.approve(address(xCrss), xCrssReward);
+                xCrss.lock(msg.sender, xCrssReward);
+                
+                payReferralCommission(msg.sender, pending);
             }
-        } else if (pending > 0) {
-            user.rewardLockedUp = user.rewardLockedUp.add(pending);
-            totalLockedUpRewards = totalLockedUpRewards.add(pending);
-            emit RewardLockedUp(msg.sender, _pid, pending);
         }
     }
 
@@ -294,10 +297,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
         devAddress = _devAddress;
     }
 
-    function setFeeAddress(address _feeAddress) public {
-        require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
-        require(_feeAddress != address(0), "setFeeAddress: ZERO");
-        feeAddress = _feeAddress;
+    function setTreasuryAddress(address _treasuryAddress) public {
+        require(msg.sender == treasuryAddress, "setTreasuryAddress: FORBIDDEN");
+        require(_treasuryAddress != address(0), "setTreasuryAddress: ZERO");
+        treasuryAddress = _treasuryAddress;
     }
 
     // Pancake has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.

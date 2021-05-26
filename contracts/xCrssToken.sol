@@ -9,7 +9,7 @@ import "./libs/SafeBEP20.sol";
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-contract xCRSS is BEP20UpgradeSafe, ITokenLocker {
+contract xCrssToken is BEP20UpgradeSafe, ITokenLocker {
     using SafeBEP20 for IBEP20;
     using SafeMath for uint256;
 
@@ -94,7 +94,7 @@ contract xCRSS is BEP20UpgradeSafe, ITokenLocker {
         require(block.number <= _endReleaseBlock, "xCRSS: no more lock");
         require(_account != address(0), "xCRSS: no lock to address(0)");
         require(_amount > 0, "xCRSS: zero lock");
-
+    
         IBEP20(CRSS).safeTransferFrom(msg.sender, address(this), _amount);
         _mint(_account, _amount);
         _totalLock = _totalLock.add(_amount);
