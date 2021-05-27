@@ -49,7 +49,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 lastRewardBlock;  // Last block number that CRSSs distribution occurs.
         uint256 accCrssPerShare;   // Accumulated CRSSs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
-        uint256 harvestInterval;  // Harvest interval in seconds
     }
 
     // The CRSS TOKEN!
@@ -66,6 +65,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Max harvest interval: 14 days.
     uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days;
+
+    uint256 public constant stakePoolId = 0;
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -121,9 +122,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -134,22 +134,19 @@ contract MasterChef is Ownable, ReentrancyGuard {
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
             accCrssPerShare: 0,
-            depositFeeBP: _depositFeeBP,
-            harvestInterval: _harvestInterval
+            depositFeeBP: _depositFeeBP
         }));
     }
 
     // Update the given pool's CRSS allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public onlyOwner {
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "set: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
         }
         totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
-        poolInfo[_pid].harvestInterval = _harvestInterval;
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -170,6 +167,23 @@ contract MasterChef is Ownable, ReentrancyGuard {
         }
         uint256 pending = user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt);
         return pending.add(user.rewardLockedUp);
+    }
+    
+    // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
+    function massHarvest(uint256[] memory pools) public {
+        uint256 poolLength = pools.length;
+        address nulladdress = address(0);
+        for (uint256 i = 0; i < poolLength; i++) {
+            deposit(pools[i], 0, nulladdress);
+        }
+    }
+
+    // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
+    function massStake(uint256[] memory pools) public {
+        uint256 poolLength = pools.length;
+        for (uint256 i = 0; i < poolLength; i++) {
+            stakeReward(pools[i]);
+        }
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -197,6 +211,29 @@ contract MasterChef is Ownable, ReentrancyGuard {
         crss.mint(address(this), crssReward);
         pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
+    }
+
+    // user can choose autoStake reward to stake pool instead just harvest
+    function stakeReward(uint256 _pid) public {
+
+        UserInfo storage user = userInfo[_pid][msg.sender];
+
+        if (user.amount > 0) {
+            PoolInfo storage pool = poolInfo[_pid];
+
+            updatePool(_pid);
+
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+            if (pending > 0) {
+
+                safeCrssTransfer(msg.sender, pending);
+                payReferralCommission(msg.sender, pending);
+
+                deposit(stakePoolId, pending, address(0));
+
+            }
+            user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+        }
     }
 
     // Deposit LP tokens to MasterChef for CRSS allocation.
