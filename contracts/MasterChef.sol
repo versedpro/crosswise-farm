@@ -5,16 +5,17 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
-import "./libs/IPantherReferral.sol";
+import "./libs/ICrssReferral.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "./PantherToken.sol";
+import "./CrssToken.sol";
+import "./xCrssToken.sol";
 
-// MasterChef is the master of Panther. He can make Panther and he is a fair guy.
+// MasterChef is the master of Crss. He can make Crss and he is a fair guy.
 //
 // Note that it's ownable and the owner wields tremendous power. The ownership
-// will be transferred to a governance smart contract once PANTHER is sufficiently
+// will be transferred to a governance smart contract once CRSS is sufficiently
 // distributed and the community can show to govern itself.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
@@ -27,15 +28,15 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 amount;         // How many LP tokens the user has provided.
         uint256 rewardDebt;     // Reward debt. See explanation below.
         uint256 rewardLockedUp;  // Reward locked up.
-        uint256 nextHarvestUntil; // When can the user harvest again.
+        // uint256 nextHarvestUntil; // When can the user harvest again.
         //
-        // We do some fancy math here. Basically, any point in time, the amount of PANTHERs
+        // We do some fancy math here. Basically, any point in time, the amount of CRSSs
         // entitled to a user but is pending to be distributed is:
         //
-        //   pending reward = (user.amount * pool.accPantherPerShare) - user.rewardDebt
+        //   pending reward = (user.amount * pool.accCrssPerShare) - user.rewardDebt
         //
         // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accPantherPerShare` (and `lastRewardBlock`) gets updated.
+        //   1. The pool's `accCrssPerShare` (and `lastRewardBlock`) gets updated.
         //   2. User receives the pending reward sent to his/her address.
         //   3. User's `amount` gets updated.
         //   4. User's `rewardDebt` gets updated.
@@ -44,25 +45,28 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Info of each pool.
     struct PoolInfo {
         IBEP20 lpToken;           // Address of LP token contract.
-        uint256 allocPoint;       // How many allocation points assigned to this pool. PANTHERs to distribute per block.
-        uint256 lastRewardBlock;  // Last block number that PANTHERs distribution occurs.
-        uint256 accPantherPerShare;   // Accumulated PANTHERs per share, times 1e12. See below.
+        uint256 allocPoint;       // How many allocation points assigned to this pool. CRSSs to distribute per block.
+        uint256 lastRewardBlock;  // Last block number that CRSSs distribution occurs.
+        uint256 accCrssPerShare;   // Accumulated CRSSs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
-        uint256 harvestInterval;  // Harvest interval in seconds
     }
 
-    // The PANTHER TOKEN!
-    PantherToken public panther;
+    // The CRSS TOKEN!
+    CrssToken public crss;
+    // The XCRSS TOKEN!
+    xCrssToken public xCrss;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
-    address public feeAddress;
-    // PANTHER tokens created per block.
-    uint256 public pantherPerBlock;
-    // Bonus muliplier for early panther makers.
+    address public treasuryAddress;
+    // CRSS tokens created per block.
+    uint256 public crssPerBlock;
+    // Bonus muliplier for early crss makers.
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Max harvest interval: 14 days.
     uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days;
+
+    uint256 public constant stakePoolId = 0;
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -70,13 +74,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
-    // The block number when PANTHER mining starts.
+    // The block number when CRSS mining starts.
     uint256 public startBlock;
     // Total locked up rewards
     uint256 public totalLockedUpRewards;
 
-    // Panther referral contract address.
-    IPantherReferral public pantherReferral;
+    // Crss referral contract address.
+    ICrssReferral public crssReferral;
     // Referral commission rate in basis points.
     uint16 public referralCommissionRate = 100;
     // Max referral commission rate: 10%.
@@ -90,16 +94,26 @@ contract MasterChef is Ownable, ReentrancyGuard {
     event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
 
     constructor(
-        PantherToken _panther,
+        CrssToken _crss,
+        xCrssToken _xCrss,
+        address _devAddress,
+        address _treasuryAddress,
         uint256 _startBlock,
-        uint256 _pantherPerBlock
+        uint256 _crssPerBlock
     ) public {
-        panther = _panther;
-        startBlock = _startBlock;
-        pantherPerBlock = _pantherPerBlock;
+        require(address(_crss) != address(0), "constructor: crss token address is zero address");
+        require(address(_xCrss) != address(0), "constructor: xcrss token address is zero address");
+        require(_devAddress != address(0), "constructor: dev address is zero address");
+        require(_treasuryAddress != address(0), "constructor: treasury address is zero address");
+        
 
-        devAddress = msg.sender;
-        feeAddress = msg.sender;
+        crss = _crss;
+        xCrss = _xCrss;
+        startBlock = _startBlock;
+        crssPerBlock = _crssPerBlock;
+
+        devAddress = _devAddress;
+        treasuryAddress = _treasuryAddress;
     }
 
     function poolLength() external view returns (uint256) {
@@ -108,9 +122,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -120,23 +133,20 @@ contract MasterChef is Ownable, ReentrancyGuard {
             lpToken: _lpToken,
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
-            accPantherPerShare: 0,
-            depositFeeBP: _depositFeeBP,
-            harvestInterval: _harvestInterval
+            accCrssPerShare: 0,
+            depositFeeBP: _depositFeeBP
         }));
     }
 
-    // Update the given pool's PANTHER allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, uint256 _harvestInterval, bool _withUpdate) public onlyOwner {
+    // Update the given pool's CRSS allocation point and deposit fee. Can only be called by the owner.
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "set: invalid harvest interval");
         if (_withUpdate) {
             massUpdatePools();
         }
         totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
-        poolInfo[_pid].harvestInterval = _harvestInterval;
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -144,25 +154,36 @@ contract MasterChef is Ownable, ReentrancyGuard {
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
     }
 
-    // View function to see pending PANTHERs on frontend.
-    function pendingPanther(uint256 _pid, address _user) external view returns (uint256) {
+    // View function to see pending CRSSs on frontend.
+    function pendingCrss(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        uint256 accPantherPerShare = pool.accPantherPerShare;
+        uint256 accCrssPerShare = pool.accCrssPerShare;
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 pantherReward = multiplier.mul(pantherPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-            accPantherPerShare = accPantherPerShare.add(pantherReward.mul(1e12).div(lpSupply));
+            uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+            accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         }
-        uint256 pending = user.amount.mul(accPantherPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt);
         return pending.add(user.rewardLockedUp);
     }
+    
+    // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
+    function massHarvest(uint256[] memory pools) public {
+        uint256 poolLength = pools.length;
+        address nulladdress = address(0);
+        for (uint256 i = 0; i < poolLength; i++) {
+            deposit(pools[i], 0, nulladdress);
+        }
+    }
 
-    // View function to see if user can harvest PANTHERs.
-    function canHarvest(uint256 _pid, address _user) public view returns (bool) {
-        UserInfo storage user = userInfo[_pid][_user];
-        return block.timestamp >= user.nextHarvestUntil;
+    // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
+    function massStake(uint256[] memory pools) public {
+        uint256 poolLength = pools.length;
+        for (uint256 i = 0; i < poolLength; i++) {
+            stakeReward(pools[i]);
+        }
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -185,37 +206,64 @@ contract MasterChef is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 pantherReward = multiplier.mul(pantherPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        panther.mint(devAddress, pantherReward.div(10));
-        panther.mint(address(this), pantherReward);
-        pool.accPantherPerShare = pool.accPantherPerShare.add(pantherReward.mul(1e12).div(lpSupply));
+        uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+        crss.mint(devAddress, crssReward.div(10));
+        crss.mint(address(this), crssReward);
+        pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
 
-    // Deposit LP tokens to MasterChef for PANTHER allocation.
+    // user can choose autoStake reward to stake pool instead just harvest
+    function stakeReward(uint256 _pid) public {
+
+        UserInfo storage user = userInfo[_pid][msg.sender];
+
+        if (user.amount > 0) {
+            PoolInfo storage pool = poolInfo[_pid];
+
+            updatePool(_pid);
+
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+            if (pending > 0) {
+
+                safeCrssTransfer(msg.sender, pending);
+                payReferralCommission(msg.sender, pending);
+
+                deposit(stakePoolId, pending, address(0));
+
+            }
+            user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+        }
+    }
+
+    // Deposit LP tokens to MasterChef for CRSS allocation.
     function deposit(uint256 _pid, uint256 _amount, address _referrer) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
-        if (_amount > 0 && address(pantherReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
-            pantherReferral.recordReferral(msg.sender, _referrer);
+        if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
+            crssReferral.recordReferral(msg.sender, _referrer);
         }
-        payOrLockupPendingPanther(_pid);
+        payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-            if (address(pool.lpToken) == address(panther)) {
-                uint256 transferTax = _amount.mul(panther.transferTaxRate()).div(10000);
-                _amount = _amount.sub(transferTax);
-            }
+
+            // Once deposit token is Crss.
+            // if (address(pool.lpToken) == address(crss)) {
+            //     uint256 transferTax = _amount.mul(400).div(10000);
+            //     _amount = _amount.sub(transferTax);
+            // }
+            
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
-                pool.lpToken.safeTransfer(feeAddress, depositFee);
+                pool.lpToken.safeTransfer(treasuryAddress, depositFee.mul(50).div(100));
+                pool.lpToken.safeTransfer(devAddress, depositFee.mul(50).div(100));
                 user.amount = user.amount.add(_amount).sub(depositFee);
             } else {
                 user.amount = user.amount.add(_amount);
             }
         }
-        user.rewardDebt = user.amount.mul(pool.accPantherPerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -225,12 +273,12 @@ contract MasterChef is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        payOrLockupPendingPanther(_pid);
+        payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
-        user.rewardDebt = user.amount.mul(pool.accPantherPerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
@@ -242,48 +290,40 @@ contract MasterChef is Ownable, ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
-        user.nextHarvestUntil = 0;
         pool.lpToken.safeTransfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
-    // Pay or lockup pending PANTHERs.
-    function payOrLockupPendingPanther(uint256 _pid) internal {
+    // Pay or lockup pending CRSSs.
+    function payOrLockuppendingCrss(uint256 _pid) internal {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
-        if (user.nextHarvestUntil == 0) {
-            user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
-        }
-
-        uint256 pending = user.amount.mul(pool.accPantherPerShare).div(1e12).sub(user.rewardDebt);
-        if (canHarvest(_pid, msg.sender)) {
-            if (pending > 0 || user.rewardLockedUp > 0) {
-                uint256 totalRewards = pending.add(user.rewardLockedUp);
-
-                // reset lockup
-                totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
-                user.rewardLockedUp = 0;
-                user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
-
+        if(user.amount > 0)
+        {
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+            if (pending > 0) {
                 // send rewards
-                safePantherTransfer(msg.sender, totalRewards);
-                payReferralCommission(msg.sender, totalRewards);
+                uint256 crssReward = pending.div(2);
+                uint256 xCrssReward = pending.div(2);
+
+                safeCrssTransfer(msg.sender, crssReward);
+
+                crss.approve(address(xCrss), xCrssReward);
+                xCrss.lock(msg.sender, xCrssReward);
+                
+                payReferralCommission(msg.sender, pending);
             }
-        } else if (pending > 0) {
-            user.rewardLockedUp = user.rewardLockedUp.add(pending);
-            totalLockedUpRewards = totalLockedUpRewards.add(pending);
-            emit RewardLockedUp(msg.sender, _pid, pending);
         }
     }
 
-    // Safe panther transfer function, just in case if rounding error causes pool to not have enough PANTHERs.
-    function safePantherTransfer(address _to, uint256 _amount) internal {
-        uint256 pantherBal = panther.balanceOf(address(this));
-        if (_amount > pantherBal) {
-            panther.transfer(_to, pantherBal);
+    // Safe crss transfer function, just in case if rounding error causes pool to not have enough CRSSs.
+    function safeCrssTransfer(address _to, uint256 _amount) internal {
+        uint256 crssBal = crss.balanceOf(address(this));
+        if (_amount > crssBal) {
+            crss.transfer(_to, crssBal);
         } else {
-            panther.transfer(_to, _amount);
+            crss.transfer(_to, _amount);
         }
     }
 
@@ -294,22 +334,22 @@ contract MasterChef is Ownable, ReentrancyGuard {
         devAddress = _devAddress;
     }
 
-    function setFeeAddress(address _feeAddress) public {
-        require(msg.sender == feeAddress, "setFeeAddress: FORBIDDEN");
-        require(_feeAddress != address(0), "setFeeAddress: ZERO");
-        feeAddress = _feeAddress;
+    function setTreasuryAddress(address _treasuryAddress) public {
+        require(msg.sender == treasuryAddress, "setTreasuryAddress: FORBIDDEN");
+        require(_treasuryAddress != address(0), "setTreasuryAddress: ZERO");
+        treasuryAddress = _treasuryAddress;
     }
 
     // Pancake has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
-    function updateEmissionRate(uint256 _pantherPerBlock) public onlyOwner {
+    function updateEmissionRate(uint256 _crssPerBlock) public onlyOwner {
         massUpdatePools();
-        emit EmissionRateUpdated(msg.sender, pantherPerBlock, _pantherPerBlock);
-        pantherPerBlock = _pantherPerBlock;
+        emit EmissionRateUpdated(msg.sender, crssPerBlock, _crssPerBlock);
+        crssPerBlock = _crssPerBlock;
     }
 
-    // Update the panther referral contract address by the owner
-    function setPantherReferral(IPantherReferral _pantherReferral) public onlyOwner {
-        pantherReferral = _pantherReferral;
+    // Update the crss referral contract address by the owner
+    function setcrssReferral(ICrssReferral _crssReferral) public onlyOwner {
+        crssReferral = _crssReferral;
     }
 
     // Update referral commission rate by the owner
@@ -320,13 +360,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Pay referral commission to the referrer who referred this user.
     function payReferralCommission(address _user, uint256 _pending) internal {
-        if (address(pantherReferral) != address(0) && referralCommissionRate > 0) {
-            address referrer = pantherReferral.getReferrer(_user);
+        if (address(crssReferral) != address(0) && referralCommissionRate > 0) {
+            address referrer = crssReferral.getReferrer(_user);
             uint256 commissionAmount = _pending.mul(referralCommissionRate).div(10000);
 
             if (referrer != address(0) && commissionAmount > 0) {
-                panther.mint(referrer, commissionAmount);
-                pantherReferral.recordReferralCommission(referrer, commissionAmount);
+                crss.mint(referrer, commissionAmount);
+                crssReferral.recordReferralCommission(referrer, commissionAmount);
                 emit ReferralCommissionPaid(_user, referrer, commissionAmount);
             }
         }
