@@ -55,6 +55,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     CrssToken public crss;
     // The XCRSS TOKEN!
     xCrssToken public xCrss;
+    //steps in time to change crssPerBlock
+    uint256 public immutable timeFirstStep;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
@@ -92,14 +94,14 @@ contract MasterChef is Ownable, ReentrancyGuard {
     event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
     event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
+    event CrssPerBlockUpdated(uint256 crssPerBlock);
 
     constructor(
         CrssToken _crss,
         xCrssToken _xCrss,
         address _devAddress,
         address _treasuryAddress,
-        uint256 _startBlock,
-        uint256 _crssPerBlock
+        uint256 _startBlock
     ) public {
         require(address(_crss) != address(0), "constructor: crss token address is zero address");
         require(address(_xCrss) != address(0), "constructor: xcrss token address is zero address");
@@ -110,14 +112,24 @@ contract MasterChef is Ownable, ReentrancyGuard {
         crss = _crss;
         xCrss = _xCrss;
         startBlock = _startBlock;
-        crssPerBlock = _crssPerBlock;
+        crssPerBlock = 1.2 * 10 ** 18;
 
         devAddress = _devAddress;
         treasuryAddress = _treasuryAddress;
+
+        timeFirstStep = now + 14 days;
     }
 
     function poolLength() external view returns (uint256) {
         return poolInfo.length;
+    }
+
+    // update crss reward count per block
+    function updateCrssPerBlock(uint256 _crssPerBlock) public onlyOwner {
+        require(_crssPerBlock != 0, "Reward token count per block can't be zero");
+        crssPerBlock = _crssPerBlock * 10 ** 18;
+        // emitts event when crssPerBlock updated
+        emit CrssPerBlockUpdated(_crssPerBlock * 10 ** 18);
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
@@ -205,6 +217,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
             pool.lastRewardBlock = block.number;
             return;
         }
+        if (now < timeFirstStep)
+            crssPerBlock = 1 * 10 ** 18;
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         crss.mint(devAddress, crssReward.div(10));
@@ -340,7 +354,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         treasuryAddress = _treasuryAddress;
     }
 
-    // Pancake has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
+    // Crosswise has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
     function updateEmissionRate(uint256 _crssPerBlock) public onlyOwner {
         massUpdatePools();
         emit EmissionRateUpdated(msg.sender, crssPerBlock, _crssPerBlock);
