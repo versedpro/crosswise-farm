@@ -45,7 +45,7 @@ contract CrssToken is IBEP20, OwnableUpgradeSafe {
     uint256 public burnFee;
     uint256 private _previousBurnFee;
 
-    address public liquidityFund;
+    // address public liquidityFund;
 
     bool public addLiquidityEnabled;
 
@@ -54,9 +54,9 @@ contract CrssToken is IBEP20, OwnableUpgradeSafe {
 
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event AddLiquidityEnabledUpdated(bool enabled);
-    event SendToLiquidityFund(address indexed receiver, uint256 amount);
+    // event SendToLiquidityFund(address indexed receiver, uint256 amount);
 
-    function initialize(address _liquidityFund) public initializer {
+    function initialize() public initializer {
         OwnableUpgradeSafe.__Ownable_init();
 
         _tTotal = 100000 ether;
@@ -79,10 +79,10 @@ contract CrssToken is IBEP20, OwnableUpgradeSafe {
         maxTxAmount = 50000 ether;
         numTokensSellToAddToLiquidity = 0.1 ether;
 
-        liquidityFund = _liquidityFund;
+        // liquidityFund = _liquidityFund;
 
         // exclude liquidityFund, owner and this contract from fee
-        _isExcludedFromFee[_liquidityFund] = true;
+        // _isExcludedFromFee[_liquidityFund] = true;
         _isExcludedFromFee[owner()] = true;
         _isExcludedFromFee[address(this)] = true;
 
@@ -264,9 +264,9 @@ contract CrssToken is IBEP20, OwnableUpgradeSafe {
         emit Transfer(sender, recipient, tTransferAmount);
     }
 
-    function setLiquidityFund(address _liquidityFund) public onlyOwner {
-        liquidityFund = _liquidityFund;
-    }
+    // function setLiquidityFund(address _liquidityFund) public onlyOwner {
+    //     liquidityFund = _liquidityFund;
+    // }
 
     function setNumTokensSellToAddToLiquidity(uint256 _numTokensSellToAddToLiquidity) public onlyOwner {
         numTokensSellToAddToLiquidity = _numTokensSellToAddToLiquidity;
@@ -438,17 +438,17 @@ contract CrssToken is IBEP20, OwnableUpgradeSafe {
             contractTokenBalance = maxTxAmount;
         }
 
-        if (addLiquidityEnabled && (contractTokenBalance >= numTokensSellToAddToLiquidity)) {
-            //add liquidity
-            // console.log("contractTokenBalance = %s", balanceOf(address(this)));
-            // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
-            // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
-            _tokenTransfer(address(this), liquidityFund, contractTokenBalance, false);
-            // console.log("contractTokenBalance = %s", balanceOf(address(this)));
-            // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
-            // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
-            emit SendToLiquidityFund(liquidityFund, contractTokenBalance);
-        }
+        // if (addLiquidityEnabled && (contractTokenBalance >= numTokensSellToAddToLiquidity)) {
+        //     //add liquidity
+        //     // console.log("contractTokenBalance = %s", balanceOf(address(this)));
+        //     // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
+        //     // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
+        //     _tokenTransfer(address(this), liquidityFund, contractTokenBalance, false);
+        //     // console.log("contractTokenBalance = %s", balanceOf(address(this)));
+        //     // console.log("msg.sender bal = %s", balanceOf(address(msg.sender)));
+        //     // console.log("liquidityFund bal = %s", balanceOf(address(liquidityFund)));
+        //     emit SendToLiquidityFund(liquidityFund, contractTokenBalance);
+        // }
 
         // indicates if fee should be deducted from transfer
         bool takeFee = true;

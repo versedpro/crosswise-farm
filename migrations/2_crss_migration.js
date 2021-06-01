@@ -1,5 +1,5 @@
-const CrssReferral = artifacts.require("Migrations");
+const CrssToken = artifacts.require("CrssToken");
 
-module.exports = function(deployer) {
-  deployer.deploy(CrssReferral);
+module.exports = async function(deployer) {
+  deployer.deploy(CrssToken);
 };
