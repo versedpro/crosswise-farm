@@ -324,7 +324,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 safeCrssTransfer(msg.sender, crssReward);
 
                 crss.approve(address(xCrss), xCrssReward);
-                xCrss.lock(msg.sender, xCrssReward);
+                xCrss.depositToken(msg.sender, xCrssReward);
                 
                 payReferralCommission(msg.sender, pending);
             }
