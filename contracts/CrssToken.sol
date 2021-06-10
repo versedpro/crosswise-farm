@@ -50,7 +50,7 @@ contract CrssToken is BEP20{
         buybackTo = _buybackTo;
 
          // Create a cross wise pair for this new token
-        crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory()).createPair(address(this), _crosswiseRouter.WETH());
+        crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory()).createPair(address(this), _crosswiseRouter.WBNB());
 
         devFee = 4; // 0.04%
         liquidityFee = 3; // 0.03%
@@ -284,14 +284,9 @@ contract CrssToken is BEP20{
         emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 
-    function _transfer(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) internal override {
-        require(sender != address(0), "BEP20: transfer from the zero address");
+    function transfer(address recipient, uint256 amount) public override returns (bool) {
         require(recipient != address(0), "BEP20: transfer to the zero address");
-        require(_balances[sender] >= amount, "BEP20: transfer amount exceeds balance");
+        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
         uint256 devAmount = amount.mul(devFee).div(10000);
         uint256 buybackAmount = amount.mul(buybackFee).div(10000);
@@ -299,7 +294,7 @@ contract CrssToken is BEP20{
 
         if (
             !inSwapAndLiquify &&
-            from != crssBnbPair &&
+            _msgSender() != crssBnbPair &&
             swapAndLiquifyEnabled
         ) {
             uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
@@ -307,16 +302,46 @@ contract CrssToken is BEP20{
             swapAndLiquify(liquidityAmount);
         }
 
-        _balances[sender] = _balances[sender].sub(transferAmount, "BEP20: transfer amount exceeds balance");
-        _balances[recipient] = _balances[recipient].add(transferAmount);
+        _transfer(_msgSender(), recipient, transferAmount);
+        _transfer(_msgSender(), devTo, devAmount);
+        _transfer(_msgSender(), buybackTo, buybackAmount);
 
-        _balances[sender] = _balances[sender].sub(devAmount, "BEP20: transfer amount exceeds balance");
-        _balances[devTo] = _balances[devTo].add(devAmount);
+        return true;
+    }
 
-        _balances[sender] = _balances[sender].sub(buybackAmount, "BEP20: transfer amount exceeds balance");
-        _balances[buybackTo] = _balances[buybackTo].add(buybackAmount);
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public override returns (bool) {
+        require(sender != address(0), "BEP20: transfer to the zero address");
+        require(recipient != address(0), "BEP20: transfer to the zero address");
+        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
-        emit Transfer(sender, recipient, amount);
+        uint256 devAmount = amount.mul(devFee).div(10000);
+        uint256 buybackAmount = amount.mul(buybackFee).div(10000);
+        uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
+
+        if (
+            !inSwapAndLiquify &&
+            sender != crssBnbPair &&
+            swapAndLiquifyEnabled
+        ) {
+            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
+            transferAmount = transferAmount.sub(liquidityAmount);
+            swapAndLiquify(liquidityAmount);
+        }
+
+        _transfer(sender, recipient, transferAmount);
+        _transfer(sender, devTo, devAmount);
+        _transfer(sender, buybackTo, buybackAmount);
+
+        _approve(
+            sender,
+            _msgSender(),
+            allowance(sender,_msgSender()).sub(amount, "BEP20: transfer amount exceeds allowance")
+        );
+        return true;
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
@@ -348,10 +373,10 @@ contract CrssToken is BEP20{
     }
 
     function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> weth
+        // generate the uniswap pair path of token -> wbnb
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = crosswiseRouter.WETH();
+        path[1] = crosswiseRouter.WBNB();
 
         _approve(address(this), address(crosswiseRouter), tokenAmount);
 

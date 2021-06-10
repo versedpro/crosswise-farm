@@ -111,7 +111,7 @@ contract BEP20 is Context, IBEP20, Ownable {
      * - `recipient` cannot be the zero address.
      * - the caller must have a balance of at least `amount`.
      */
-    function transfer(address recipient, uint256 amount) public override returns (bool) {
+    function transfer(address recipient, uint256 amount) public override virtual returns (bool) {
         _transfer(_msgSender(), recipient, amount);
         return true;
     }
@@ -151,7 +151,7 @@ contract BEP20 is Context, IBEP20, Ownable {
         address sender,
         address recipient,
         uint256 amount
-    ) public override returns (bool) {
+    ) public override virtual returns (bool) {
         _transfer(sender, recipient, amount);
         _approve(
             sender,
