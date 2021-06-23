@@ -260,8 +260,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
         }
         payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
+            uint256 oldBalance = pool.lpToken.balanceOf(address(this));
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-
+            uint256 newBalance = pool.lpToken.balanceOf(address(this));
+            _amount = newBalance.sub(oldBalance);
             // Once deposit token is Crss.
             // if (address(pool.lpToken) == address(crss)) {
             //     uint256 transferTax = _amount.mul(400).div(10000);
