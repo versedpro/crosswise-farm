@@ -58,29 +58,29 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         await expectRevert(this.crss.updateBurnRate(101, { from: operator }), 'CRSS::updateBurnRate: Burn rate must not exceed the maximum rate.');
     });
 
-    it.only('transfer', async () => {
+    it('transfer', async () => {
         await this.crss.mint(alice, 10000000, { from: owner }); // max transfer amount 25,000
         assert.equal((await this.crss.balanceOf(alice)).toString(), '10000000');
         assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '0');
         assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
 
-        await this.crss.setSwapAndLiquifyEnabled(false, { from: owner });
-        assert.equal((await this.crss.swapAndLiquifyEnabled()), false);
+        // await this.crss.setSwapAndLiquifyEnabled(false, { from: owner });
+        // assert.equal((await this.crss.swapAndLiquifyEnabled()), false);
 
-        // await this.WBNB.deposit({ from: owner, value: new BN('1000000000000000000') });
-        // await this.crss.approve(this.crosswiseRouter.address, 10000000, { from: alice });
-        // console.log((await this.crss.allowance(alice, this.crosswiseRouter.address)).toString());
-        // await this.WBNB.approve(this.crosswiseRouter.address, new BN('1000000000000000000'), { from: owner });
-        // console.log((await this.crss.balanceOf(alice)).toString());
-        // await this.crosswiseRouter.addLiquidityETH(
-        //     this.crss.address, 
-        //     1, 
-        //     1, 
-        //     4, 
-        //     alice, 
-        //     new BN('100000000000000000000000000000000000'), 
-        //     { from: alice, value: 4 }
-        // );
+        await this.WBNB.deposit({ from: owner, value: new BN('1000000000000000000') });
+        await this.crss.approve(this.crosswiseRouter.address, 10000000, { from: alice });
+        console.log((await this.crss.allowance(alice, this.crosswiseRouter.address)).toString());
+        await this.WBNB.approve(this.crosswiseRouter.address, new BN('1000000000000000000'), { from: owner });
+        console.log((await this.crss.balanceOf(alice)).toString());
+        await this.crosswiseRouter.addLiquidityETH(
+            this.crss.address, 
+            1, 
+            1, 
+            4, 
+            alice, 
+            new BN('100000000000000000000000000000000000'), 
+            { from: alice, value: 4 }
+        );
 
         await this.crss.transfer(bob, 12345, { from: alice });
         assert.equal((await this.crss.balanceOf(alice)).toString(), '9987655');
@@ -198,12 +198,10 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         assert.equal((await this.crss.maxTransferAmount()).toString(), '10010');
     });
 
-    it('anti whale', async () => {
-        await this.crss.transferOperator(operator, { from: owner });
-        assert.equal((await this.crss.operator()), operator);
+    it.only('anti whale', async () => {
 
         assert.equal((await this.crss.isExcludedFromAntiWhale(operator)), false);
-        await this.crss.setExcludedFromAntiWhale(operator, true, { from: operator });
+        await this.crss.setExcludedFromAntiWhale(operator, true, { from: owner });
         assert.equal((await this.crss.isExcludedFromAntiWhale(operator)), true);
 
         await this.crss.mint(alice, 10000, { from: owner });
@@ -218,11 +216,14 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         await this.crss.approve(carol, 251, { from: alice });
         await expectRevert(this.crss.transferFrom(alice, carol, 251, { from: carol }), 'CRSS::antiWhale: Transfer amount exceeds the maxTransferAmount');
 
+        await this.crss.setSwapAndLiquifyEnabled(false, { from: owner });
+        assert.equal((await this.crss.swapAndLiquifyEnabled()), false);
+        
         //
         await this.crss.transfer(bob, 250, { from: alice });
         await this.crss.transferFrom(alice, carol, 250, { from: carol });
 
-        await this.crss.transfer(this.burnAddress, 251, { from: alice });
+        await expectRevert(this.crss.transfer(this.burnAddress, 251, { from: alice }), 'CRSS::antiWhale: Transfer amount exceeds the maxTransferAmount');
         await this.crss.transfer(operator, 251, { from: alice });
         await this.crss.transfer(owner, 251, { from: alice });
         await this.crss.transfer(this.crss.address, 251, { from: alice });
