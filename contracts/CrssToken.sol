@@ -9,9 +9,20 @@ import './interface/ICrosswiseFactory.sol';
 
 // CrssToken with Governance.
 contract CrssToken is BEP20{
+
+    event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
+    event SwapAndLiquifyEnabledUpdated(bool enabled);
+    event SwapAndLiquify(
+        uint256 tokensSwapped,
+        uint256 ethReceived,
+        uint256 tokensIntoLiqudity
+    );
+
     uint256 public devFee;
     uint256 public liquidityFee;
     uint256 public buybackFee;
+
+    uint256 public maxTransferAmountRate = 50;
 
     address public devTo;
     address public buybackTo;
@@ -22,18 +33,24 @@ contract CrssToken is BEP20{
     ICrosswiseRouter02 public immutable crosswiseRouter;
     address public immutable crssBnbPair;
     
-    event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
-    event SwapAndLiquifyEnabledUpdated(bool enabled);
-    event SwapAndLiquify(
-        uint256 tokensSwapped,
-        uint256 ethReceived,
-        uint256 tokensIntoLiqudity
-    );
+    mapping(address => bool) private _excludedFromAntiWhale;
 
     modifier lockTheSwap {
         inSwapAndLiquify = true;
         _;
         inSwapAndLiquify = false;
+    }
+
+    modifier antiWhale(address sender, address recipient, uint256 amount) {
+        if (maxTransferAmount() > 0) {
+            if (
+                _excludedFromAntiWhale[sender] == false
+                && _excludedFromAntiWhale[recipient] == false
+            ) {
+                require(amount <= maxTransferAmount(), "CrssToken.antiWhale: Transfer amount exceeds the maxTransferAmount");
+            }
+        }
+        _;
     }
 
     constructor(
@@ -55,6 +72,10 @@ contract CrssToken is BEP20{
         devFee = 4; // 0.04%
         liquidityFee = 3; // 0.03%
         buybackFee = 3; // 0.03%
+
+        _excludedFromAntiWhale[msg.sender] = true;
+        _excludedFromAntiWhale[address(0)] = true;
+        _excludedFromAntiWhale[address(this)] = true;
     }
 
      //to recieve ETH from crosswiseRouter when swaping
@@ -284,7 +305,7 @@ contract CrssToken is BEP20{
         emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 
-    function transfer(address recipient, uint256 amount) public override returns (bool) {
+    function transfer(address recipient, uint256 amount) public override antiWhale(msg.sender, recipient, amount) returns (bool) {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
@@ -313,14 +334,12 @@ contract CrssToken is BEP20{
         address sender,
         address recipient,
         uint256 amount
-    ) public override returns (bool) {
+    ) public override antiWhale(sender, recipient, amount) returns (bool) {
         require(sender != address(0), "BEP20: transfer to the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
-        uint256 devAmount = amount.mul(devFee).div(10000);
-        uint256 buybackAmount = amount.mul(buybackFee).div(10000);
-        uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
+        uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
 
         if (
             !inSwapAndLiquify &&
@@ -333,8 +352,8 @@ contract CrssToken is BEP20{
         }
 
         _transfer(sender, recipient, transferAmount);
-        _transfer(sender, devTo, devAmount);
-        _transfer(sender, buybackTo, buybackAmount);
+        _transfer(sender, devTo, amount.mul(devFee).div(10000));
+        _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
 
         _approve(
             sender,
@@ -349,8 +368,16 @@ contract CrssToken is BEP20{
         emit SwapAndLiquifyEnabledUpdated(_enabled);
     }
 
+     function setMaxTransferAmountRate(uint256 _maxTransferAmountRate) public onlyOwner {
+        require(_maxTransferAmountRate <= 10000, "CrssToken.setMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
+        maxTransferAmountRate = _maxTransferAmountRate;
+    }
+
     function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
         // split the contract balance into halves
+        uint256 maxTransferAmount = maxTransferAmount();
+        contractTokenBalance = contractTokenBalance > maxTransferAmount ? maxTransferAmount : contractTokenBalance;
+
         uint256 half = contractTokenBalance.div(2);
         uint256 otherHalf = contractTokenBalance.sub(half);
 
@@ -403,6 +430,14 @@ contract CrssToken is BEP20{
             owner(),
             block.timestamp
         );
+    }
+
+    function maxTransferAmount() public view returns (uint256) {
+        return totalSupply().mul(maxTransferAmountRate).div(10000);
+    }
+
+    function isExcludedFromAntiWhale(address _account) public view returns (bool) {
+        return _excludedFromAntiWhale[_account];
     }
 
     function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
