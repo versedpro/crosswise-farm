@@ -61,6 +61,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     address public devAddress;
     // Deposit Fee address
     address public treasuryAddress;
+    // Burn address
+    address public constant burnAddress = 0x000000000000000000000000000000000000dEaD;
     // CRSS tokens created per block.
     uint256 public crssPerBlock;
     // Bonus muliplier for early crss makers.
@@ -182,11 +184,11 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
     
     // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
-    function massHarvest(uint256[] memory pools) public {
+    function massHarvest(uint256[] memory pools, bool immediateClaim) public {
         uint256 poolLength = pools.length;
         address nulladdress = address(0);
         for (uint256 i = 0; i < poolLength; i++) {
-            deposit(pools[i], 0, nulladdress);
+            deposit(pools[i], 0, nulladdress, immediateClaim);
         }
     }
 
@@ -221,7 +223,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             crssPerBlock = 1 * 10 ** 18;
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        crss.mint(devAddress, crssReward.div(10));
+        crss.mint(devAddress, crssReward.div(115).mul(10));
         crss.mint(address(this), crssReward);
         pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
@@ -239,26 +241,24 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
             uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
-
                 safeCrssTransfer(msg.sender, pending);
                 payReferralCommission(msg.sender, pending);
-
-                deposit(stakePoolId, pending, address(0));
-
+                
+                deposit(stakePoolId, pending, address(0), false);
             }
             user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         }
     }
 
     // Deposit LP tokens to MasterChef for CRSS allocation.
-    function deposit(uint256 _pid, uint256 _amount, address _referrer) public nonReentrant {
+    function deposit(uint256 _pid, uint256 _amount, address _referrer, bool immediateClaim) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
             crssReferral.recordReferral(msg.sender, _referrer);
         }
-        payOrLockuppendingCrss(_pid);
+        payOrLockuppendingCrss(_pid, immediateClaim);
         if (_amount > 0) {
             uint256 oldBalance = pool.lpToken.balanceOf(address(this));
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
@@ -289,7 +289,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        payOrLockuppendingCrss(_pid);
+        payOrLockuppendingCrss(_pid, false);
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
@@ -311,7 +311,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
 
     // Pay or lockup pending CRSSs.
-    function payOrLockuppendingCrss(uint256 _pid) internal {
+    function payOrLockuppendingCrss(uint256 _pid, bool _immediateClaim) internal {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
@@ -320,15 +320,25 @@ contract MasterChef is Ownable, ReentrancyGuard {
             uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
                 // send rewards
-                uint256 crssReward = pending.div(2);
-                uint256 xCrssReward = pending.div(2);
+                if(_immediateClaim) {
+                    uint256 crssReward = pending.mul(75).div(100);
+                    uint256 burnReward = pending.div(25).div(100);
 
-                safeCrssTransfer(msg.sender, crssReward);
+                    safeCrssTransfer(msg.sender, crssReward);
+                    safeCrssTransfer(burnAddress, burnReward);
+                }
+                else {
+                    uint256 crssReward = pending.div(2);
+                    uint256 xCrssReward = pending.div(2);
 
-                crss.approve(address(xCrss), xCrssReward);
-                xCrss.depositToken(msg.sender, xCrssReward);
-                
+                    safeCrssTransfer(msg.sender, crssReward);
+
+                    crss.approve(address(xCrss), xCrssReward);
+                    xCrss.depositToken(msg.sender, xCrssReward);
+                }   
                 payReferralCommission(msg.sender, pending);
+                
+                
             }
         }
     }
