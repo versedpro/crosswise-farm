@@ -2,21 +2,29 @@
 
 pragma solidity 0.6.12;
 
-import "./libs/BEP20.sol";
+import "./libs/Context.sol";
+import "./libs/IBEP20.sol";
+import "./libs/Ownable.sol";
 import './interface/ICrosswiseRouter02.sol';
 import './interface/ICrosswiseFactory.sol';
 
-
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 // CrssToken with Governance.
-contract CrssToken is BEP20{
+contract CrssToken is Context, IBEP20, Ownable {
 
-    event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
-    event SwapAndLiquifyEnabledUpdated(bool enabled);
-    event SwapAndLiquify(
-        uint256 tokensSwapped,
-        uint256 ethReceived,
-        uint256 tokensIntoLiqudity
-    );
+    using SafeMath for uint256;
+    using Address for address;
+
+    mapping(address => uint256) private _balances;
+
+    mapping(address => mapping(address => uint256)) private _allowances;
+
+    uint256 private _totalSupply;
+
+    string private _name;
+    string private _symbol;
+    uint8 private _decimals;
 
     uint256 public devFee;
     uint256 public liquidityFee;
@@ -30,10 +38,20 @@ contract CrssToken is BEP20{
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
 
-    ICrosswiseRouter02 public immutable crosswiseRouter;
-    address public immutable crssBnbPair;
+    ICrosswiseRouter02 public crosswiseRouter;
+    address public crssBnbPair;
     
     mapping(address => bool) private _excludedFromAntiWhale;
+
+        
+    event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
+    event SwapAndLiquifyEnabledUpdated(bool enabled);
+    event SwapAndLiquify(
+        uint256 tokensSwapped,
+        uint256 ethReceived,
+        uint256 tokensIntoLiqudity
+    );
+    event transferInsufficient(address indexed from, address indexed to, uint256 total, uint256 balance);
 
     modifier lockTheSwap {
         inSwapAndLiquify = true;
@@ -53,21 +71,23 @@ contract CrssToken is BEP20{
         _;
     }
 
+    //to recieve ETH from crosswiseRouter when swaping
+    receive() external payable {}
+
     constructor(
-        ICrosswiseRouter02 _crosswiseRouter,
         address _devTo,
         address _buybackTo
-    ) public BEP20('Crosswise Token', 'CRSS') {
-        require(address(_crosswiseRouter) != address(0), 'CrssToken: router contract address is zero');
+    ) public {
         require(_devTo != address(0), 'CrssToken: dev address is zero');
         require(_buybackTo != address(0), 'CrssToken: buyback address is zero');
 
-        crosswiseRouter = _crosswiseRouter;
+
+        _name = 'Money Token';
+        _symbol = 'Money';
+        _decimals = 18;
+
         devTo = _devTo;
         buybackTo = _buybackTo;
-
-         // Create a cross wise pair for this new token
-        crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory()).createPair(address(this), _crosswiseRouter.WBNB());
 
         devFee = 4; // 0.04%
         liquidityFee = 3; // 0.03%
@@ -77,10 +97,255 @@ contract CrssToken is BEP20{
         _excludedFromAntiWhale[address(0)] = true;
         _excludedFromAntiWhale[address(this)] = true;
     }
-
-     //to recieve ETH from crosswiseRouter when swaping
-    receive() external payable {}
     
+    function init_router(address router) public onlyOwner {
+        // TESTER: moving to a separate function to avoid breaking tests.
+        ICrosswiseRouter02 _crosswiseRouter = ICrosswiseRouter02(router);
+        // Create a uniswap pair for this new token
+        crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory())
+        .createPair(address(this), _crosswiseRouter.WBNB());
+
+        // set the rest of the contract variables
+        crosswiseRouter = _crosswiseRouter;
+    }
+
+
+    
+    function getOwner() external view returns (address) {
+        return owner();
+    }
+    function name() public view returns (string memory) {
+        return _name;
+    }
+    function decimals() public view returns (uint8) {
+        return _decimals;
+    }
+    function symbol() public view returns (string memory) {
+        return _symbol;
+    }
+    function totalSupply() public override view returns (uint256) {
+        return _totalSupply;
+    }
+    function balanceOf(address account) public override view returns (uint256) {
+        return _balances[account];
+    }
+    function allowance(address owner, address spender) public override view returns (uint256) {
+        return _allowances[owner][spender];
+    }
+    function approve(address spender, uint256 amount) public override returns (bool) {
+        _approve(_msgSender(), spender, amount);
+        return true;
+    }
+    function increaseAllowance(address spender, uint256 addedValue) public returns (bool) {
+        _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
+        return true;
+    }
+    function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
+        _approve(
+            _msgSender(),
+            spender,
+            _allowances[_msgSender()][spender].sub(subtractedValue, 'BEP20: decreased allowance below zero')
+        );
+        return true;
+    }
+
+    function _mint(address account, uint256 amount) internal {
+        require(account != address(0), 'BEP20: mint to the zero address');
+
+        _totalSupply = _totalSupply.add(amount);
+        _balances[account] = _balances[account].add(amount);
+        emit Transfer(address(0), account, amount);
+    }
+
+    function _burn(address account, uint256 amount) internal {
+        require(account != address(0), 'BEP20: burn from the zero address');
+
+        _balances[account] = _balances[account].sub(amount, 'BEP20: burn amount exceeds balance');
+        _totalSupply = _totalSupply.sub(amount);
+        emit Transfer(account, address(0), amount);
+    }
+    function _approve(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal {
+        require(owner != address(0), 'BEP20: approve from the zero address');
+        require(spender != address(0), 'BEP20: approve to the zero address');
+
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+    function _burnFrom(address account, uint256 amount) internal {
+        _burn(account, amount);
+        _approve(
+            account,
+            _msgSender(),
+            _allowances[account][_msgSender()].sub(amount, 'BEP20: burn amount exceeds allowance')
+        );
+    }
+
+
+    
+    function transfer(address recipient, uint256 amount) public override antiWhale(msg.sender, recipient, amount) returns (bool) {
+        require(recipient != address(0), "BEP20: transfer to the zero address");
+        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
+
+        uint256 devAmount = amount.mul(devFee).div(10000);
+        uint256 buybackAmount = amount.mul(buybackFee).div(10000);
+        uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
+
+        if (
+            !inSwapAndLiquify &&
+            _msgSender() != crssBnbPair &&
+            swapAndLiquifyEnabled
+        ) {
+            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
+            transferAmount = transferAmount.sub(liquidityAmount);
+            swapAndLiquify(liquidityAmount);
+        }
+
+        _transfer(_msgSender(), recipient, transferAmount);
+        _transfer(_msgSender(), devTo, devAmount);
+        _transfer(_msgSender(), buybackTo, buybackAmount);
+
+        return true;
+    }
+
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public override antiWhale(sender, recipient, amount) returns (bool) {
+        require(sender != address(0), "BEP20: transfer to the zero address");
+        require(recipient != address(0), "BEP20: transfer to the zero address");
+        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
+
+        uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
+
+        if (
+            !inSwapAndLiquify &&
+            sender != crssBnbPair &&
+            swapAndLiquifyEnabled
+        ) {
+            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
+            transferAmount = transferAmount.sub(liquidityAmount);
+            swapAndLiquify(liquidityAmount);
+        }
+
+        _transfer(sender, recipient, transferAmount);
+        _transfer(sender, devTo, amount.mul(devFee).div(10000));
+        _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
+
+        _approve(
+            sender,
+            _msgSender(),
+            allowance(sender,_msgSender()).sub(amount, "BEP20: transfer amount exceeds allowance")
+        );
+        return true;
+    }
+
+    function _transfer(address sender, address recipient, uint256 amount) internal {
+        require(sender != address(0), 'BEP20: transfer from the zero address');
+        require(recipient != address(0), 'BEP20: transfer to the zero address');
+
+
+        _balances[sender] = _balances[sender].sub(amount, 'BEP20: transfer amount exceeds balance');
+        _balances[recipient] = _balances[recipient].add(amount);
+        emit Transfer(sender, recipient, amount);
+    }
+
+    function safeTransfer(address _to, uint256 _total) external onlyOwner {
+        uint256 balance = balanceOf(address(this));
+        if (_total > balance) {
+            emit transferInsufficient(msg.sender, _to, _total, balance);
+            transfer(_to, balance);
+        } else {
+            transfer(_to, _total);
+        }
+    }
+
+    function safeTransferFrom(address _sender, address _to, uint256 _total) external onlyOwner {
+        uint256 balance = balanceOf(_sender);
+        if (_total > balance) {
+            emit transferInsufficient(_sender, _to, _total, balance);
+            transferFrom(_sender, _to, balance);
+        } else {
+            transferFrom(_sender, _to, _total);
+        }
+    }
+
+    function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
+        swapAndLiquifyEnabled = _enabled;
+        emit SwapAndLiquifyEnabledUpdated(_enabled);
+    }
+
+     function setMaxTransferAmountRate(uint256 _maxTransferAmountRate) public onlyOwner {
+        require(_maxTransferAmountRate <= 10000, "CrssToken.setMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
+        maxTransferAmountRate = _maxTransferAmountRate;
+    }
+
+    function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
+        // split the contract balance into halves
+        uint256 maxTransferAmount = maxTransferAmount();
+        contractTokenBalance = contractTokenBalance > maxTransferAmount ? maxTransferAmount : contractTokenBalance;
+
+        uint256 half = contractTokenBalance.div(2);
+        uint256 otherHalf = contractTokenBalance.sub(half);
+
+        // capture the contract's current ETH balance.
+        // this is so that we can capture exactly the amount of ETH that the
+        // swap creates, and not make the liquidity event include any ETH that
+        // has been manually sent to the contract
+        uint256 initialBalance = address(this).balance;
+
+        // swap tokens for ETH
+        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+
+        // how much ETH did we just swap into?
+        uint256 newBalance = address(this).balance.sub(initialBalance);
+
+        // add liquidity to uniswap
+        addLiquidity(otherHalf, newBalance);
+        
+        emit SwapAndLiquify(half, newBalance, otherHalf);
+    }
+
+    function swapTokensForEth(uint256 tokenAmount) private {
+        // generate the uniswap pair path of token -> wbnb
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = crosswiseRouter.WBNB();
+
+        _approve(address(this), address(crosswiseRouter), tokenAmount);
+
+        // make the swap
+        crosswiseRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            tokenAmount,
+            0, // accept any amount of ETH
+            path,
+            address(this),
+            block.timestamp
+        );
+    }
+
+    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(crosswiseRouter), tokenAmount);
+
+        // add the liquidity
+        crosswiseRouter.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            owner(),
+            block.timestamp
+        );
+    }
+
+
+
+
     /// @dev Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
     function mint(address _to, uint256 _amount) public onlyOwner {
         _mint(_to, _amount);
@@ -303,133 +568,6 @@ contract CrssToken is BEP20{
         }
 
         emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
-    }
-
-    function transfer(address recipient, uint256 amount) public override antiWhale(msg.sender, recipient, amount) returns (bool) {
-        require(recipient != address(0), "BEP20: transfer to the zero address");
-        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
-
-        uint256 devAmount = amount.mul(devFee).div(10000);
-        uint256 buybackAmount = amount.mul(buybackFee).div(10000);
-        uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
-
-        if (
-            !inSwapAndLiquify &&
-            _msgSender() != crssBnbPair &&
-            swapAndLiquifyEnabled
-        ) {
-            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
-            transferAmount = transferAmount.sub(liquidityAmount);
-            swapAndLiquify(liquidityAmount);
-        }
-
-        _transfer(_msgSender(), recipient, transferAmount);
-        _transfer(_msgSender(), devTo, devAmount);
-        _transfer(_msgSender(), buybackTo, buybackAmount);
-
-        return true;
-    }
-
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) public override antiWhale(sender, recipient, amount) returns (bool) {
-        require(sender != address(0), "BEP20: transfer to the zero address");
-        require(recipient != address(0), "BEP20: transfer to the zero address");
-        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
-
-        uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
-
-        if (
-            !inSwapAndLiquify &&
-            sender != crssBnbPair &&
-            swapAndLiquifyEnabled
-        ) {
-            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
-            transferAmount = transferAmount.sub(liquidityAmount);
-            swapAndLiquify(liquidityAmount);
-        }
-
-        _transfer(sender, recipient, transferAmount);
-        _transfer(sender, devTo, amount.mul(devFee).div(10000));
-        _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
-
-        _approve(
-            sender,
-            _msgSender(),
-            allowance(sender,_msgSender()).sub(amount, "BEP20: transfer amount exceeds allowance")
-        );
-        return true;
-    }
-
-    function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
-        swapAndLiquifyEnabled = _enabled;
-        emit SwapAndLiquifyEnabledUpdated(_enabled);
-    }
-
-     function setMaxTransferAmountRate(uint256 _maxTransferAmountRate) public onlyOwner {
-        require(_maxTransferAmountRate <= 10000, "CrssToken.setMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
-        maxTransferAmountRate = _maxTransferAmountRate;
-    }
-
-    function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
-        // split the contract balance into halves
-        uint256 maxTransferAmount = maxTransferAmount();
-        contractTokenBalance = contractTokenBalance > maxTransferAmount ? maxTransferAmount : contractTokenBalance;
-
-        uint256 half = contractTokenBalance.div(2);
-        uint256 otherHalf = contractTokenBalance.sub(half);
-
-        // capture the contract's current ETH balance.
-        // this is so that we can capture exactly the amount of ETH that the
-        // swap creates, and not make the liquidity event include any ETH that
-        // has been manually sent to the contract
-        uint256 initialBalance = address(this).balance;
-
-        // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
-
-        // how much ETH did we just swap into?
-        uint256 newBalance = address(this).balance.sub(initialBalance);
-
-        // add liquidity to uniswap
-        addLiquidity(otherHalf, newBalance);
-        
-        emit SwapAndLiquify(half, newBalance, otherHalf);
-    }
-
-    function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> wbnb
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = crosswiseRouter.WBNB();
-
-        _approve(address(this), address(crosswiseRouter), tokenAmount);
-
-        // make the swap
-        crosswiseRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
-            tokenAmount,
-            0, // accept any amount of ETH
-            path,
-            address(this),
-            block.timestamp
-        );
-    }
-
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
-        // approve token transfer to cover all possible scenarios
-        _approve(address(this), address(crosswiseRouter), tokenAmount);
-
-        // add the liquidity
-        crosswiseRouter.addLiquidityETH{value: ethAmount}(
-            address(this),
-            tokenAmount,
-            0, // slippage is unavoidable
-            0, // slippage is unavoidable
-            owner(),
-            block.timestamp
-        );
     }
 
     function maxTransferAmount() public view returns (uint256) {
