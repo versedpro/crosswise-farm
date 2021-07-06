@@ -65,7 +65,7 @@ contract CrssToken is Context, IBEP20, Ownable {
                 _excludedFromAntiWhale[sender] == false
                 && _excludedFromAntiWhale[recipient] == false
             ) {
-                require(amount <= maxTransferAmount(), "CrssToken.antiWhale: Transfer amount exceeds the maxTransferAmount");
+                require(amount <= maxTransferAmount(), "CRSS::antiWhale: Transfer amount exceeds the maxTransferAmount");
             }
         }
         _;
@@ -576,6 +576,10 @@ contract CrssToken is Context, IBEP20, Ownable {
 
     function isExcludedFromAntiWhale(address _account) public view returns (bool) {
         return _excludedFromAntiWhale[_account];
+    }
+
+    function setExcludedFromAntiWhale(address _account, bool _excluded) public onlyOwner {
+        _excludedFromAntiWhale[_account] = _excluded;
     }
 
     function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
