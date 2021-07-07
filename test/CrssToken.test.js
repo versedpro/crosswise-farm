@@ -13,7 +13,7 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         this.WBNB = await WBNB.new({ from: owner });
         this.crosswiseRouter = await crosswiseRouter.new(this.crosswiseFactory.address, this.WBNB.address, { from: owner});
         // this.BNB = await MockBEP20.new("BNB", "BNB", 1000, { from: operator });
-        this.crss = await CrssToken.new(this.crosswiseRouter.address, dev, buyback, { from: owner });
+        this.crss = await CrssToken.new(dev, buyback, { from: owner });
         this.burnAddress = buyback;
         this.zeroAddress = '0x0000000000000000000000000000000000000000';
     });
@@ -58,29 +58,14 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         await expectRevert(this.crss.updateBurnRate(101, { from: operator }), 'CRSS::updateBurnRate: Burn rate must not exceed the maximum rate.');
     });
 
-    it('transfer', async () => {
+    it.only('transfer without swapAndLiquify enabled', async () => {
         await this.crss.mint(alice, 10000000, { from: owner }); // max transfer amount 25,000
         assert.equal((await this.crss.balanceOf(alice)).toString(), '10000000');
         assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '0');
         assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
 
-        // await this.crss.setSwapAndLiquifyEnabled(false, { from: owner });
-        // assert.equal((await this.crss.swapAndLiquifyEnabled()), false);
-
-        await this.WBNB.deposit({ from: owner, value: new BN('1000000000000000000') });
-        await this.crss.approve(this.crosswiseRouter.address, 10000000, { from: alice });
-        console.log((await this.crss.allowance(alice, this.crosswiseRouter.address)).toString());
-        await this.WBNB.approve(this.crosswiseRouter.address, new BN('1000000000000000000'), { from: owner });
-        console.log((await this.crss.balanceOf(alice)).toString());
-        await this.crosswiseRouter.addLiquidityETH(
-            this.crss.address, 
-            1, 
-            1, 
-            4, 
-            alice, 
-            new BN('100000000000000000000000000000000000'), 
-            { from: alice, value: 4 }
-        );
+        await this.crss.setSwapAndLiquifyEnabled(false, { from: owner });
+        assert.equal((await this.crss.swapAndLiquifyEnabled()), false);
 
         await this.crss.transfer(bob, 12345, { from: alice });
         assert.equal((await this.crss.balanceOf(alice)).toString(), '9987655');
@@ -88,16 +73,46 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         assert.equal((await this.crss.balanceOf(dev)).toString(), '4')
         assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '3');
         assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
-
-        // await this.crss.approve(carol, 22345, { from: alice });
-        // console.log((await this.crss.balanceOf(carol)).toString());
-        // console.log((await this.crss.allowance(alice, carol)).toString());
-        // await this.crss.transferFrom(alice, carol, 22345, { from: carol });
-        // assert.equal((await this.crss.balanceOf(alice)).toString(), '9965310');
-        // assert.equal((await this.crss.balanceOf(carol)).toString(), '21228');
-        // assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '346');
-        // assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '1388');
     });
+
+    // it.only('transfer with swapAndLiquify enabled', async () => {
+    //     await this.crss.mint(alice, 10000000, { from: owner }); // max transfer amount 25,000
+    //     assert.equal((await this.crss.balanceOf(alice)).toString(), '10000000');
+    //     assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '0');
+    //     assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
+
+    //     await this.WBNB.deposit({ from: alice, value: 10000000 });
+    //     await this.crss.approve(this.crosswiseRouter.address, 10000000, { from: alice });
+    //     console.log((await this.crss.allowance(alice, this.crosswiseRouter.address)).toString());
+    //     console.log((await this.crss.balanceOf(alice)).toString());
+    //     await this.WBNB.approve(this.crosswiseRouter.address, 10000000, { from: alice });
+    //     console.log((await this.crss.balanceOf(alice)).toString());
+    //     await this.crosswiseRouter.addLiquidityETH(
+    //         this.crss.address, 
+    //         9000000, 
+    //         0, 
+    //         0, 
+    //         alice, 
+    //         new BN('100000000000000000000000000000000000'), 
+    //         { from: alice, value: 10000000 }
+    //     );
+
+    //     await this.crss.transfer(bob, 12345, { from: alice });
+    //     assert.equal((await this.crss.balanceOf(alice)).toString(), '9987655');
+    //     assert.equal((await this.crss.balanceOf(bob)).toString(), '12338');
+    //     assert.equal((await this.crss.balanceOf(dev)).toString(), '4')
+    //     assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '3');
+    //     assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
+
+    //     // await this.crss.approve(carol, 22345, { from: alice });
+    //     // console.log((await this.crss.balanceOf(carol)).toString());
+    //     // console.log((await this.crss.allowance(alice, carol)).toString());
+    //     // await this.crss.transferFrom(alice, carol, 22345, { from: carol });
+    //     // assert.equal((await this.crss.balanceOf(alice)).toString(), '9965310');
+    //     // assert.equal((await this.crss.balanceOf(carol)).toString(), '21228');
+    //     // assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '346');
+    //     // assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '1388');
+    // });
 
     it('transfer small amount', async () => {
         await this.crss.transferOperator(operator, { from: owner });
