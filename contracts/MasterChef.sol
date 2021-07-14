@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
 import "./libs/ICrssReferral.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "./libs/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./CrssToken.sol";
@@ -223,7 +223,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             crssPerBlock = 1 * 10 ** 18;
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        crss.mint(devAddress, crssReward.div(115).mul(10));
+        crss.mint(devAddress, crssReward.mul(87).div(1000));
         crss.mint(address(this), crssReward);
         pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
