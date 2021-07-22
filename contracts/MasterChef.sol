@@ -261,7 +261,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         payOrLockuppendingCrss(_pid, immediateClaim);
         if (_amount > 0) {
             uint256 oldBalance = pool.lpToken.balanceOf(address(this));
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
+            pool.lpToken.transferFrom(address(msg.sender), address(this), _amount);
             uint256 newBalance = pool.lpToken.balanceOf(address(this));
             _amount = newBalance.sub(oldBalance);
             // Once deposit token is Crss.
@@ -272,8 +272,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
             
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
-                pool.lpToken.safeTransfer(treasuryAddress, depositFee.mul(50).div(100));
-                pool.lpToken.safeTransfer(devAddress, depositFee.mul(50).div(100));
+                pool.lpToken.transfer(treasuryAddress, depositFee.mul(50).div(100));
+                pool.lpToken.transfer(devAddress, depositFee.mul(50).div(100));
                 user.amount = user.amount.add(_amount).sub(depositFee);
             } else {
                 user.amount = user.amount.add(_amount);
@@ -292,7 +292,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         payOrLockuppendingCrss(_pid, false);
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
-            pool.lpToken.safeTransfer(address(msg.sender), _amount);
+            pool.lpToken.transfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
@@ -306,7 +306,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
-        pool.lpToken.safeTransfer(address(msg.sender), amount);
+        pool.lpToken.transfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 

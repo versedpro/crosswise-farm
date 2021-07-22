@@ -157,13 +157,6 @@ contract CrssToken is Context, IBEP20, Ownable {
         emit Transfer(address(0), account, amount);
     }
 
-    function _burn(address account, uint256 amount) internal {
-        require(account != address(0), 'BEP20: burn from the zero address');
-
-        _balances[account] = _balances[account].sub(amount, 'BEP20: burn amount exceeds balance');
-        _totalSupply = _totalSupply.sub(amount);
-        emit Transfer(account, address(0), amount);
-    }
     function _approve(
         address owner,
         address spender,
@@ -175,15 +168,6 @@ contract CrssToken is Context, IBEP20, Ownable {
         _allowances[owner][spender] = amount;
         emit Approval(owner, spender, amount);
     }
-    function _burnFrom(address account, uint256 amount) internal {
-        _burn(account, amount);
-        _approve(
-            account,
-            _msgSender(),
-            _allowances[account][_msgSender()].sub(amount, 'BEP20: burn amount exceeds allowance')
-        );
-    }
-
 
     
     function transfer(address recipient, uint256 amount) public override antiWhale(msg.sender, recipient, amount) returns (bool) {
@@ -218,7 +202,6 @@ contract CrssToken is Context, IBEP20, Ownable {
     ) public override antiWhale(sender, recipient, amount) returns (bool) {
         require(sender != address(0), "BEP20: transfer to the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
-        require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
         uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
 
@@ -252,26 +235,6 @@ contract CrssToken is Context, IBEP20, Ownable {
         _balances[sender] = _balances[sender].sub(amount, 'BEP20: transfer amount exceeds balance');
         _balances[recipient] = _balances[recipient].add(amount);
         emit Transfer(sender, recipient, amount);
-    }
-
-    function safeTransfer(address _to, uint256 _total) external onlyOwner {
-        uint256 balance = balanceOf(address(this));
-        if (_total > balance) {
-            emit transferInsufficient(msg.sender, _to, _total, balance);
-            transfer(_to, balance);
-        } else {
-            transfer(_to, _total);
-        }
-    }
-
-    function safeTransferFrom(address _sender, address _to, uint256 _total) external onlyOwner {
-        uint256 balance = balanceOf(_sender);
-        if (_total > balance) {
-            emit transferInsufficient(_sender, _to, _total, balance);
-            transferFrom(_sender, _to, balance);
-        } else {
-            transferFrom(_sender, _to, _total);
-        }
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
