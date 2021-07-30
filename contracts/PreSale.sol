@@ -10,14 +10,27 @@ import "./libs/IBEP20.sol";
 contract Presale is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
-    event Deposited(
+    event Deposit(
+        address indexed depositUser, 
+        uint256 amount
+    );
+    
+    event Withdraw(
         address indexed user, 
         uint256 amount
     );
 
+    struct UserDetail {
+        uint256 depositTime;
+        uint256 totalRewardAmount;
+        uint256 withdrawAmount;   
+        uint256 depositAmount;
+    }
+    
     IBEP20 crssToken;
     IBEP20 busd;
     
+    mapping(address => UserDetail) public userDetail;
     mapping(address => uint256) public deposits;
 
     address[] public investors;
@@ -25,7 +38,11 @@ contract Presale is Ownable, ReentrancyGuard {
     address public masterWallet;
     
     uint256 public totalDepositedBusdBalance;
+    uint256 public totalRewardAmount;
+    uint256 public totalWithdrawedAmount;
 
+    uint256 public constant oneMonth = 30 days;
+    uint256 public constant unlockPerMonth = 20;
     uint256 public startTimestamp;
     uint256 public softCapAmount = 50000000000000000000000; // 50k busd
     uint256 public hardCapAmount = 200000000000000000000000; // 200k busd
@@ -77,22 +94,59 @@ contract Presale is Ownable, ReentrancyGuard {
     function deposit(uint256 _amount) public payable nonReentrant {
         require(now >= startTimestamp, "Presale.deposit: Presale is not active");
         require(totalDepositedBusdBalance + _amount <= hardCapAmount, "deposit is above hardcap limit");
-        require(deposits[msg.sender] + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
+
+        UserDetail storage user = userDetail[msg.sender];
+
+        require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
 
         uint256 rewardTokenAmount = _amount.mul(1e18).div(tokenPrice);
-
-        busd.safeTransferFrom(msg.sender, masterWallet, _amount);
-        crssToken.safeTransferFrom(masterWallet, msg.sender, rewardTokenAmount);
-
-        totalDepositedBusdBalance = totalDepositedBusdBalance + _amount;
-        if(deposits[msg.sender] == 0) {
+        require(crssToken.balanceOf(address(this)).add(totalWithdrawedAmount).sub(totalRewardAmount) >= rewardTokenAmount, "Presale.deposit: not enough token to reward" );
+        if(user.depositAmount == 0) {
             investors.push(msg.sender);
         }
-        deposits[msg.sender] = deposits[msg.sender] + _amount;
+        user.depositAmount = user.depositAmount + _amount;
+        user.totalRewardAmount = user.totalRewardAmount.add(rewardTokenAmount);
+        totalRewardAmount = totalRewardAmount.add(rewardTokenAmount);
+        totalDepositedBusdBalance = totalDepositedBusdBalance + _amount;
+
+        busd.safeTransferFrom(msg.sender, masterWallet, _amount);
         
-        emit Deposited(msg.sender, _amount);
+        emit Deposit(msg.sender, _amount);
     }
 
+    function withdrawToken(uint256 _amount) public {
+        uint256 unlocked = unlockedToken(msg.sender);
+        require(unlocked >= _amount, "Presale.withdrawToken: Not enough token to withdraw.");
+
+        UserDetail storage user = userDetail[msg.sender];
+
+        user.withdrawAmount = user.withdrawAmount.add(_amount);
+        totalWithdrawedAmount = totalWithdrawedAmount.add(_amount);
+
+        crssToken.transfer(msg.sender, _amount);
+        
+        emit Withdraw(msg.sender, _amount);
+    }
+
+    function unlockedToken(address _user) public view returns (uint256) {
+        UserDetail storage user = userDetail[_user];
+
+        if(_getNow() <= user.depositTime) {
+            return 0;
+        }
+        else {
+            uint256 timePassed = _getNow().sub(user.depositTime);
+            uint256 monthPassed = timePassed.div(oneMonth);
+            uint256 unlocked;
+            if(monthPassed >= 5){
+                unlocked = user.totalRewardAmount;
+            } else {
+                unlocked = user.totalRewardAmount.mul(unlockPerMonth.mul(monthPassed)).div(100);
+            }
+            return unlocked.sub(user.withdrawAmount);
+        }
+    }
+    
     function _getNow() internal virtual view returns (uint256) {
         return block.timestamp;
     }
