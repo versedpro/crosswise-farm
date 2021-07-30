@@ -85,27 +85,27 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
     });
 
     it.only('transfer with swapAndLiquify enabled', async () => {
-        this.MockBEP20 = await MockBEP20.new("test", "test", {from: owner})
-        await this.MockBEP20.mint(alice, tokenSupply, { from: owner }); // max transfer amount 25,000
-        assert.equal((await this.MockBEP20.balanceOf(alice)).toString(), '100000000000000000000000000');
-        assert.equal((await this.MockBEP20.balanceOf(this.burnAddress)).toString(), '0');
-        assert.equal((await this.MockBEP20.balanceOf(this.MockBEP20.address)).toString(), '0');
+        await this.crss.mint(owner, tokenSupply, { from: owner }); // max transfer amount 25,000
+        assert.equal((await this.crss.balanceOf(owner)).toString(), '100000000000000000000000000');
+        assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '0');
+        assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
 
-        await this.WBNB.deposit({ from: alice, value: FIVE_TOKENS });
-        await this.MockBEP20.approve(this.crosswiseRouter.address, FIVE_TOKENS, { from: alice });
-        console.log((await this.MockBEP20.allowance(alice, this.crosswiseRouter.address)).toString());
-        console.log((await this.MockBEP20.balanceOf(alice)).toString());
-        await this.WBNB.approve(this.crosswiseRouter.address, FIVE_TOKENS, { from: alice });
-        console.log((await this.MockBEP20.balanceOf(alice)).toString());
+        await this.WBNB.deposit({ from: owner, value: FIVE_TOKENS });
+        console.log((await this.WBNB.balanceOf(owner)).toString());
+        await this.crss.approve(this.crosswiseRouter.address, FIVE_TOKENS, { from: owner });
+        console.log((await this.crss.allowance(owner, this.crosswiseRouter.address)).toString());
+        console.log((await this.crss.balanceOf(owner)).toString());
+        await this.WBNB.approve(this.crosswiseRouter.address, FIVE_TOKENS, { from: owner });
+        console.log((await this.crss.balanceOf(owner)).toString());
         let currentTime = await time.latest();
         await this.crosswiseRouter.addLiquidityETH(
-            this.MockBEP20.address, 
-            FIVE_TOKENS,
+            this.crss.address, 
             FIVE_TOKENS, 
-            ONE_TOKEN, 
-            alice, 
-            new BN(currentTime + 10), 
-            { from: alice, value:  ether('1')}
+            0, 
+            0, 
+            owner, 
+            new BN(currentTime + 1000), 
+            { from: owner, value: 1 }
         );
 
         await this.MockBEP20.transfer(bob, 12345, { from: alice });
@@ -224,7 +224,7 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         assert.equal((await this.crss.maxTransferAmount()).toString(), '10010');
     });
 
-    it.only('anti whale', async () => {
+    it('anti whale', async () => {
 
         assert.equal((await this.crss.isExcludedFromAntiWhale(operator)), false);
         await this.crss.setExcludedFromAntiWhale(operator, true, { from: owner });
@@ -259,7 +259,7 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         await this.crss.transfer(owner, 251, { from: operator });
     });
 
-    it.only('update SwapAndLiquifyEnabled', async () => {
+    it('update SwapAndLiquifyEnabled', async () => {
         await expectRevert(this.crss.setSwapAndLiquifyEnabled(false, { from: bob }), 'Ownable: caller is not the owner');
         assert.equal((await this.crss.swapAndLiquifyEnabled()), true);
 

@@ -82,8 +82,8 @@ contract CrssToken is Context, IBEP20, Ownable {
         require(_buybackTo != address(0), 'CrssToken: buyback address is zero');
 
 
-        _name = 'Money Token';
-        _symbol = 'Money';
+        _name = 'Crosswise Token';
+        _symbol = 'CRSS';
         _decimals = 18;
 
         devTo = _devTo;
