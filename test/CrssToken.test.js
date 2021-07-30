@@ -84,7 +84,7 @@ contract('CrssToken', ([alice, bob, carol, operator, dev, buyback, owner]) => {
         assert.equal((await this.crss.balanceOf(this.crss.address)).toString(), '0');
     });
 
-    it.only('transfer with swapAndLiquify enabled', async () => {
+    it('transfer with swapAndLiquify enabled', async () => {
         await this.crss.mint(owner, tokenSupply, { from: owner }); // max transfer amount 25,000
         assert.equal((await this.crss.balanceOf(owner)).toString(), '100000000000000000000000000');
         assert.equal((await this.crss.balanceOf(this.burnAddress)).toString(), '0');
