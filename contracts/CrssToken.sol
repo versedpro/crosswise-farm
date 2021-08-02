@@ -38,14 +38,16 @@ contract CrssToken is Context, IBEP20, Ownable {
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
 
+    bool public presaleEnabled = true;
+
     ICrosswiseRouter02 public crosswiseRouter;
     address public crssBnbPair;
     
     mapping(address => bool) private _excludedFromAntiWhale;
 
-        
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
+    event PresaleEnabledUpdated(bool enabled);
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
@@ -108,8 +110,6 @@ contract CrssToken is Context, IBEP20, Ownable {
         // set the rest of the contract variables
         crosswiseRouter = _crosswiseRouter;
     }
-
-
     
     function getOwner() external view returns (address) {
         return owner();
@@ -174,23 +174,27 @@ contract CrssToken is Context, IBEP20, Ownable {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
-        uint256 devAmount = amount.mul(devFee).div(10000);
-        uint256 buybackAmount = amount.mul(buybackFee).div(10000);
-        uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
+        if (presaleEnabled) {
+            _transfer(_msgSender(), recipient, amount);
+        } else {
+            uint256 devAmount = amount.mul(devFee).div(10000);
+            uint256 buybackAmount = amount.mul(buybackFee).div(10000);
+            uint256 transferAmount = amount.sub(devAmount).sub(buybackAmount);
 
-        if (
-            !inSwapAndLiquify &&
-            _msgSender() != crssBnbPair &&
-            swapAndLiquifyEnabled
-        ) {
-            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
-            transferAmount = transferAmount.sub(liquidityAmount);
-            swapAndLiquify(liquidityAmount);
+            if (
+                !inSwapAndLiquify &&
+                _msgSender() != crssBnbPair &&
+                swapAndLiquifyEnabled
+            ) {
+                uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
+                transferAmount = transferAmount.sub(liquidityAmount);
+                swapAndLiquify(liquidityAmount);
+            }
+
+            _transfer(_msgSender(), recipient, transferAmount);
+            _transfer(_msgSender(), devTo, devAmount);
+            _transfer(_msgSender(), buybackTo, buybackAmount);
         }
-
-        _transfer(_msgSender(), recipient, transferAmount);
-        _transfer(_msgSender(), devTo, devAmount);
-        _transfer(_msgSender(), buybackTo, buybackAmount);
 
         return true;
     }
@@ -235,6 +239,11 @@ contract CrssToken is Context, IBEP20, Ownable {
         _balances[sender] = _balances[sender].sub(amount, 'BEP20: transfer amount exceeds balance');
         _balances[recipient] = _balances[recipient].add(amount);
         emit Transfer(sender, recipient, amount);
+    }
+
+    function setPresaleEnabled(bool _presaleEnabled) public onlyOwner {
+        presaleEnabled = _presaleEnabled;
+        emit PresaleEnabledUpdated(_presaleEnabled);
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
@@ -305,9 +314,6 @@ contract CrssToken is Context, IBEP20, Ownable {
             block.timestamp
         );
     }
-
-
-
 
     /// @dev Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
     function mint(address _to, uint256 _amount) public onlyOwner {
