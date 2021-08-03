@@ -103,7 +103,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         ICrosswiseRouter02 _crosswiseRouter = ICrosswiseRouter02(router);
         // Create a uniswap pair for this new token
         crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory())
-        .createPair(address(this), _crosswiseRouter.WBNB());
+        .createPair(address(this), _crosswiseRouter.WETH());
 
         // set the rest of the contract variables
         crosswiseRouter = _crosswiseRouter;
@@ -185,12 +185,18 @@ contract CrssToken is Context, IBEP20, Ownable {
         ) {
             uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
             transferAmount = transferAmount.sub(liquidityAmount);
+            _transfer(_msgSender(), address(this), liquidityAmount);
             swapAndLiquify(liquidityAmount);
         }
 
-        _transfer(_msgSender(), recipient, transferAmount);
-        _transfer(_msgSender(), devTo, devAmount);
-        _transfer(_msgSender(), buybackTo, buybackAmount);
+        if(recipient == crssBnbPair) {
+            _transfer(_msgSender(), recipient, amount);    
+        }
+        else {
+            _transfer(_msgSender(), recipient, transferAmount);
+            _transfer(_msgSender(), devTo, devAmount);
+            _transfer(_msgSender(), buybackTo, buybackAmount);
+        }
 
         return true;
     }
@@ -212,13 +218,17 @@ contract CrssToken is Context, IBEP20, Ownable {
         ) {
             uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
             transferAmount = transferAmount.sub(liquidityAmount);
+            _transfer(sender, address(this), liquidityAmount);
             swapAndLiquify(liquidityAmount);
         }
-
-        _transfer(sender, recipient, transferAmount);
-        _transfer(sender, devTo, amount.mul(devFee).div(10000));
-        _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
-
+        if(recipient == crssBnbPair) {
+            _transfer(sender, recipient, amount);    
+        }
+        else {
+            _transfer(sender, recipient, transferAmount);
+            _transfer(sender, devTo, amount.mul(devFee).div(10000));
+            _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
+        }
         _approve(
             sender,
             _msgSender(),
@@ -274,10 +284,10 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
 
     function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> wbnb
+        // generate the uniswap pair path of token -> WETH
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = crosswiseRouter.WBNB();
+        path[1] = crosswiseRouter.WETH();
 
         _approve(address(this), address(crosswiseRouter), tokenAmount);
 

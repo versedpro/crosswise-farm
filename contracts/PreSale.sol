@@ -92,7 +92,7 @@ contract Presale is Ownable, ReentrancyGuard {
     }
 
     function deposit(uint256 _amount) public payable nonReentrant {
-        require(now >= startTimestamp, "Presale.deposit: Presale is not active");
+        require(_getNow() >= startTimestamp, "Presale.deposit: Presale is not active");
         require(totalDepositedBusdBalance + _amount <= hardCapAmount, "deposit is above hardcap limit");
 
         UserDetail storage user = userDetail[msg.sender];
@@ -104,6 +104,7 @@ contract Presale is Ownable, ReentrancyGuard {
         if(user.depositAmount == 0) {
             investors.push(msg.sender);
         }
+        user.depositTime = _getNow();
         user.depositAmount = user.depositAmount + _amount;
         user.totalRewardAmount = user.totalRewardAmount.add(rewardTokenAmount);
         totalRewardAmount = totalRewardAmount.add(rewardTokenAmount);

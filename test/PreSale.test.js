@@ -3,7 +3,10 @@ const { ZERO_ADDRESS } = constants;
 
 const { expect } = require('chai');
 
-const CrssToken = artifacts.require('MockBEP20');
+// const AccessControls = artifacts.require('AccessControls');
+const ERC20 = artifacts.require('MockBEP20');
+const BUSD = artifacts.require('MockBEP20');
+// const VestingToken = artifacts.require('VestingToken');
 const PreSale = artifacts.require('PreSale');
 
 
@@ -13,68 +16,159 @@ function seconds_since_epoch(){
 }
   
 
-contract('CrssToken Test', function ([owner, masterWallet, investor1, investor2]) {
+contract('PreSale Test', function ([owner, masterWallet, investor1, investor2, investor3]) {
 
-    const name = 'Cross Token';
-    const symbol = 'Crss';
+    const name = 'BUSD coin';
+    const symbol = 'BUSD';
     const decimal = new BN('18');
 
 
     const tokenSupply = new BN('100000000000000000000000000');
-    const hardCap = new BN('200000000000000000000000');
-    const softCap = new BN('50000000000000000000000');
-    const ONE_TOKEN = new BN('1000000000000000000');
+    const seed_sale_token = new BN('10000000000000000000000000');
+    const TWO_THOUSAND_TOKENS = new BN('2000000000000000000000');
+    const ONE_THOUSAND_TOKENS = new BN('1000000000000000000000');
+    const ONE_HUNDRED_TOKENS = new BN('100000000000000000000');
     const TEN_TOKEN = new BN('10000000000000000000');
-    const hardCapOverflow = new BN('2000000000000000000000000');
-    const maxBusdPerWallet = new BN('1000000000000000000000');
-    const maxBusdPerWalletOverflow = new BN('2000000000000000000000');
+    const FIVE_TOKENS = new BN('5000000000000000000');
+    const TWO_TOKENS = new BN('2000000000000000000');
+    const ONE_TOKEN = new BN('1000000000000000000');
+    const REMAINING_TOKENS = new BN('99000000000000000000');
+    const Thirty_days = new BN('2592000');
 
     before(async function () {
-        this.token = await CrssToken.new(name, symbol, {from: owner});
-        this.busd = await CrssToken.new("busd", "busd", {from: owner});
-        const startTime = new BN(seconds_since_epoch().toString());
-        this.PreSale = await PreSale.new(this.token.address, this.busd.address, masterWallet, startTime);
-        this.token.mint(masterWallet, tokenSupply, {from: owner});
-        this.busd.mint(investor1, tokenSupply, {from: owner});
+        this.token = await ERC20.new("Crss token", "CRSS", {from: owner});
+        this.busdToken = await BUSD.new("BUSD COIN", "BUSD", {from: owner});
+        let currentTime = await time.latest();
+        this.PreSale = await PreSale.new(this.token.address, this.busdToken.address, masterWallet, new BN(currentTime.add(new BN('1'))) , {from: owner});
+        await this.busdToken.mint(owner, tokenSupply, {from: owner});
+        await this.busdToken.transfer(investor1, ONE_HUNDRED_TOKENS, {from:owner});
+        await this.busdToken.transfer(investor2, ONE_HUNDRED_TOKENS, {from:owner});
+        await this.token.mint(owner, tokenSupply, {from: owner});
+        // this.seedSale = await SeedSale.new(this.token.address, this.accessControls.address, this.vestingContract.address, masterWallet, startTime);
     });
 
 
-    describe('deposit', function () {
-        context('validate', function() {
-            it('revert because presale is not active', async function () {
-                const startTime = new BN(seconds_since_epoch().toString()).add(new BN('10'));
-                this.PreSaleNotActive = await PreSale.new(this.token.address, this.busd.address, masterWallet, startTime);
-                await expectRevert(this.PreSaleNotActive.deposit(hardCapOverflow, {from:investor1}), "Presale.deposit: Presale is not active");
-            })
-            it('revert because hardcap limit', async function () {
-                await expectRevert(this.PreSale.deposit(hardCapOverflow, {from:investor1}), "deposit is above hardcap limit");
+    describe('buyTokens', function () {
+        describe('validate', function() {
+
+            it('revert because depoist amount is over hardcap', async function () {
+                await time.increase(new BN('10'));
+                let currentTime = await time.latest();
+        console.log(currentTime.toString());
+                await this.PreSale.updateHardCapAmount( ONE_TOKEN, {from:owner});
+                // await this.daiToken.approve(this.PreSale.address, TEN_TOKEN, {from: investor1});
+                await expectRevert(this.PreSale.deposit(TEN_TOKEN, {from:investor1}), "deposit is above hardcap limit");
             });
 
-            it('revert because deposit before start time.', async function () {
-                await expectRevert(this.PreSale.deposit(maxBusdPerWalletOverflow, {from:investor1}), "Presale.deposit: deposit amount is bigger than max deposit amount");
+            it('revert because deposit amount is bigger than max deposit amount', async function () {
+                await this.PreSale.updateHardCapAmount( tokenSupply, {from:owner});
+                await expectRevert(this.PreSale.deposit(TWO_THOUSAND_TOKENS, {from:investor2}), "Presale.deposit: deposit amount is bigger than max deposit amount");
             });
 
-            it('revert because not approved.', async function () {
-                await expectRevert(this.PreSale.deposit(ONE_TOKEN, {from:investor1}), "BEP20: transfer amount exceeds allowance.");
-            });
-
-            it('revert because crss not approved.', async function () {
-                await this.busd.approve(this.PreSale.address, ONE_TOKEN, {from: investor1});
-                await expectRevert(this.PreSale.deposit(ONE_TOKEN, {from:investor1}), "BEP20: transfer amount exceeds allowance.");
+            it('revert because PreSale contract doesnt have enough reward token', async function () {
+                await this.token.transfer(this.PreSale.address, ONE_TOKEN, {from: owner});
+                await this.busdToken.approve(this.PreSale.address, TEN_TOKEN, {from: investor1});
+                await expectRevert(this.PreSale.deposit(TEN_TOKEN, {from:investor1}), "Presale.deposit: not enough token to reward");
             });
         });
         
 
-        context('deposit success', async function () {
+        describe('buyTokens success', async function () {
             before(async function () {
-                await this.token.approve(this.PreSale.address, tokenSupply, {from: masterWallet});
+                await this.token.mint(this.PreSale.address, tokenSupply, {from: owner});
             })
-            it('deposit', async function () {
-                await this.busd.approve(this.PreSale.address, ONE_TOKEN, {from: investor1});
-                await this.PreSale.deposit(ONE_TOKEN, {from: investor1});
-                expect(await this.token.balanceOf(investor1)).to.be.bignumber.equal(ether('2'));
+            it('buyTokens', async function () {
+                const oldBalance = await this.busdToken.balanceOf(masterWallet);
+                await this.busdToken.approve(this.PreSale.address, TEN_TOKEN, {from: investor1});
+                await this.PreSale.deposit(TEN_TOKEN, {from:investor1});
+                const newBalance = await this.busdToken.balanceOf(masterWallet);
+                const changes = new BN(newBalance.sub(oldBalance));
+                expect(changes).to.be.bignumber.equal('10000000000000000000');
+                const userDetail = await this.PreSale.userDetail(investor1);
+                expect(userDetail.totalRewardAmount).to.be.bignumber.equal('20000000000000000000');
+                expect(userDetail.depositAmount).to.be.bignumber.equal('10000000000000000000');
+                expect(userDetail.withdrawAmount).to.be.bignumber.equal('0');
+            });
+            it('buyTokens by 1st investor again', async function () {
+                const oldBalance = await this.busdToken.balanceOf(masterWallet);
+                await this.busdToken.approve(this.PreSale.address, TEN_TOKEN, {from: investor1});
+                await this.PreSale.deposit(TEN_TOKEN, {from:investor1});
+                const newBalance = await this.busdToken.balanceOf(masterWallet);
+                const changes = new BN(newBalance.sub(oldBalance));
+                expect(changes).to.be.bignumber.equal('10000000000000000000');
+                const userDetail = await this.PreSale.userDetail(investor1);
+                expect(userDetail.totalRewardAmount).to.be.bignumber.equal('40000000000000000000');
+                expect(userDetail.depositAmount).to.be.bignumber.equal('20000000000000000000');
+                expect(userDetail.withdrawAmount).to.be.bignumber.equal('0');
+            });
+            it('buyTokens by 2nd investor (check decimals)', async function () {
+                const oldBalance = await this.busdToken.balanceOf(masterWallet);
+                await this.busdToken.approve(this.PreSale.address, new BN('12500000000000000000'), {from: investor2});
+                await this.PreSale.deposit(new BN('12500000000000000000'), {from:investor2});
+                const newBalance = await this.busdToken.balanceOf(masterWallet);
+                const changes = new BN(newBalance.sub(oldBalance));
+                expect(changes).to.be.bignumber.equal('12500000000000000000');
+                const userDetail = await this.PreSale.userDetail(investor2);
+                expect(userDetail.totalRewardAmount).to.be.bignumber.equal('25000000000000000000');
+                expect(userDetail.depositAmount).to.be.bignumber.equal('12500000000000000000');
+                expect(userDetail.withdrawAmount).to.be.bignumber.equal('0');
+            });
+            
+        });
+    });
+
+    describe('Claim Token', function () {
+        before(async function () {
+            await this.token.transfer(this.PreSale.address, ONE_THOUSAND_TOKENS, {from: owner});
+            await this.busdToken.approve(this.PreSale.address, ONE_HUNDRED_TOKENS, {from: investor1});
+            await this.PreSale.deposit(ONE_HUNDRED_TOKENS, {from:investor1});
+        })
+        describe('validate', function() {
+    
+            it('revert because not enough balance to withdraw', async function () {
+                await expectRevert(this.PreSale.withdrawToken(TWO_TOKENS, {from:investor1}), "Presale.withdrawToken: Not enough token to withdraw.");
             });
         });
+        
 
+        describe.only('claimTokens success', async function () {
+            it('claimTokens', async function () {
+                // await time.increase(new BN('10'));
+                let rewardAmount = await this.PreSale.unlockedToken(investor1);
+                expect(rewardAmount).to.be.bignumber.equal('0');
+            });
+            it('claimTokens', async function () {
+                await time.increase(new BN('2592000'));
+                let rewardAmount = await this.PreSale.unlockedToken(investor1);
+                expect(rewardAmount).to.be.bignumber.equal('40000000000000000000');
+                await this.PreSale.withdrawToken(new BN('40000000000000000000'),{from: investor1});
+                const balance = await this.token.balanceOf(investor1);
+                expect(balance).to.be.bignumber.equal('40000000000000000000');
+                rewardAmount = await this.PreSale.unlockedToken(investor1);
+                expect(rewardAmount).to.be.bignumber.equal('0');
+                const userDetail = await this.PreSale.userDetail(investor1);
+                expect(userDetail.totalRewardAmount).to.be.bignumber.equal('200000000000000000000');
+                expect(userDetail.depositAmount).to.be.bignumber.equal('100000000000000000000');
+                expect(userDetail.withdrawAmount).to.be.bignumber.equal('40000000000000000000');
+                const totalWithdrawedAmount = await this.PreSale.totalWithdrawedAmount();
+                expect(totalWithdrawedAmount).to.be.bignumber.equal('40000000000000000000');
+            });
+            it('claimTokens', async function () {
+                await time.increase(new BN('604800000000'));
+                let rewardAmount = await this.PreSale.unlockedToken(investor1);
+                expect(rewardAmount).to.be.bignumber.equal('160000000000000000000');
+                await this.PreSale.withdrawToken(new BN('160000000000000000000'), {from: investor1});
+                const balance = await this.token.balanceOf(investor1);
+                expect(balance).to.be.bignumber.equal('200000000000000000000');
+                rewardAmount = await this.PreSale.unlockedToken(investor1);
+                expect(rewardAmount).to.be.bignumber.equal('0');
+                const userDetail = await this.PreSale.userDetail(investor1);
+                expect(userDetail.totalRewardAmount).to.be.bignumber.equal('200000000000000000000');
+                expect(userDetail.depositAmount).to.be.bignumber.equal('100000000000000000000');
+                expect(userDetail.withdrawAmount).to.be.bignumber.equal('200000000000000000000');
+                const totalWithdrawedAmount = await this.PreSale.totalWithdrawedAmount();
+                expect(totalWithdrawedAmount).to.be.bignumber.equal('200000000000000000000');
+            });
+        });
     });
 });
