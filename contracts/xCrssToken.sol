@@ -76,7 +76,7 @@ contract xCrssToken is BEP20UpgradeSafe {
 
         require(_depositUser != address(0), "xCrssToken.deposit: Deposit user address should not be zero address");
 
-        crssToken.safeTransferFrom(msg.sender, address(this), _rewardAmount);
+        crssToken.transferFrom(msg.sender, address(this), _rewardAmount);
 
         _mint(_depositUser, _rewardAmount);
 
@@ -95,7 +95,7 @@ contract xCrssToken is BEP20UpgradeSafe {
 
         user.withdrawAmount = user.withdrawAmount.add(_amount);
 
-        crssToken.safeTransfer(msg.sender, _amount);
+        crssToken.transfer(msg.sender, _amount);
         
         _burn(msg.sender, _amount);
 
