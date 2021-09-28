@@ -20,6 +20,11 @@ contract Presale is Ownable, ReentrancyGuard {
         uint256 amount
     );
 
+    event SetWhiteList(
+        address indexed addr,
+        bool status
+    );
+
     struct UserDetail {
         uint256 depositTime;
         uint256 totalRewardAmount;
@@ -32,6 +37,7 @@ contract Presale is Ownable, ReentrancyGuard {
     
     mapping(address => UserDetail) public userDetail;
     mapping(address => uint256) public deposits;
+    mapping(address => bool) whitelist;
 
     address[] public investors;
 
@@ -76,25 +82,32 @@ contract Presale is Ownable, ReentrancyGuard {
         return investors;
     }
     
-    function updateSoftCapAmount(uint256 _softCapAmount) public onlyOwner {
+    function updateSoftCapAmount(uint256 _softCapAmount) external onlyOwner {
         require(_softCapAmount > 0, "Presale.updateSoftCapAmount: soft cap amount invalid");
         softCapAmount = _softCapAmount;
     }
 
-    function updateHardCapAmount(uint256 _hardCapAmount) public onlyOwner {
+    function updateHardCapAmount(uint256 _hardCapAmount) external onlyOwner {
         require(_hardCapAmount > 0, "Presale.updateHardCapAmount: soft cap amount invalid");
         hardCapAmount = _hardCapAmount;
     }
 
-    function updateTokenPrice(uint256 _tokenPrice) public onlyOwner {
-        require(_tokenPrice > 0, "Presale.updateSoftCapAmount: soft cap amount invalid");
+    function updateTokenPrice(uint256 _tokenPrice) external onlyOwner {
+        require(_tokenPrice > 0, "Presale.updateTokenPrice: soft cap amount invalid");
         tokenPrice = _tokenPrice;
     }
 
-    function deposit(uint256 _amount) public payable nonReentrant {
+    function setWhiteList(address _addr, bool _status) external onlyOwner {
+        require(_addr != address(0), "Presale.setWhiteList: Zero Address");
+        whitelist[_addr] = _status;
+        emit SetWhiteList(_addr, _status);
+    }
+
+    function deposit(uint256 _amount) external payable nonReentrant {
+        require(whitelist[msg.sender], "Presale.deposit: depositor should be whitelist member");
         require(_getNow() >= startTimestamp, "Presale.deposit: Presale is not active");
         require(totalDepositedBusdBalance + _amount <= hardCapAmount, "deposit is above hardcap limit");
-
+        
         UserDetail storage user = userDetail[msg.sender];
 
         require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
@@ -115,7 +128,7 @@ contract Presale is Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, _amount);
     }
 
-    function withdrawToken(uint256 _amount) public {
+    function withdrawToken(uint256 _amount) external {
         uint256 unlocked = unlockedToken(msg.sender);
         require(unlocked >= _amount, "Presale.withdrawToken: Not enough token to withdraw.");
 

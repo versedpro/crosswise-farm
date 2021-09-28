@@ -1,5 +1,6 @@
 const Presale = artifacts.require("Presale");
 
 module.exports = async function(deployer) {
-  deployer.deploy(Presale, "0x74A8172C7EF1FD2637a2e605819ac2f9bc4A113f", "0xeD24FC36d5Ee211Ea25A80239Fb8C4Cfd80f12Ee", "0x6973a5D5e2Bd3bBDe498104FeCDF3132A3c545aB", "1624561779");
+  const block = await web3.eth.getBlock("latest");
+  deployer.deploy(Presale, "0xA98D21C3D61A7EB9Dd3BE9C9a1132Abb7c7Be2Dd", "0xeD24FC36d5Ee211Ea25A80239Fb8C4Cfd80f12Ee", "0x6973a5D5e2Bd3bBDe498104FeCDF3132A3c545aB", block.number);
 };
