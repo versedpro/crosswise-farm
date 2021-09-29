@@ -115,7 +115,7 @@ contract Presale is Ownable, ReentrancyGuard {
 
         require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
 
-        if (totalDepositedBusdBalance >= softCapAmount) {
+        if (totalDepositedBusdBalance >= softCapAmount && tokenPrice != secondTokenPrice) {
             tokenPrice = secondTokenPrice;
         }
 
