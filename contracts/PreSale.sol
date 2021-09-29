@@ -57,7 +57,7 @@ contract Presale is Ownable, ReentrancyGuard {
     uint256 public tokenPrice = fistTokenPrice; // First Stage: 0.2 BUSD
     // uint256 public hardCapPrice = 1000000000000000000; //1 BUSD
     uint256 public maxBusdPerWallet = 25000000000000000000000; // 25k BUSD
-    uint256 public maxSupply = 80000000000000000000000; // 80k CRSS
+    uint256 public maxSupply = 2000000000000000000000000; // 2M CRSS
 
     constructor(
         IBEP20 _crssToken,
