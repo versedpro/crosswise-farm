@@ -58,6 +58,7 @@ contract Presale is Ownable, ReentrancyGuard {
     // uint256 public hardCapPrice = 1000000000000000000; //1 BUSD
     uint256 public maxBusdPerWallet = 25000000000000000000000; // 25k BUSD
     uint256 public maxSupply = 2000000000000000000000000; // 2M CRSS
+    uint256 public minPurchase = 250000000000000000000;
 
     constructor(
         IBEP20 _crssToken,
@@ -110,16 +111,27 @@ contract Presale is Ownable, ReentrancyGuard {
         require(whitelist[msg.sender], "Presale.deposit: depositor should be whitelist member");
         require(_getNow() >= startTimestamp, "Presale.deposit: Presale is not active");
         require(totalDepositedBusdBalance + _amount <= hardCapAmount, "deposit is above hardcap limit");
+        require(_amount >= minPurchase, "Presale.deposit: Min buy is 250 usd");
         
         UserDetail storage user = userDetail[msg.sender];
 
         require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
+        uint256 rewardTokenAmount;
 
         if (totalDepositedBusdBalance >= softCapAmount && tokenPrice != secondTokenPrice) {
             tokenPrice = secondTokenPrice;
         }
 
-        uint256 rewardTokenAmount = _amount.mul(1e18).div(tokenPrice);
+        if(totalDepositedBusdBalance < softCapAmount && softCapAmount.sub(totalDepositedBusdBalance) < _amount) {
+            uint256 amountSoft = softCapAmount.sub(totalDepositedBusdBalance);
+            uint256 amountHard = _amount.sub(amountSoft);
+            rewardTokenAmount = amountSoft.mul(1e18).div(fistTokenPrice) + amountHard.mul(1e18).div(secondTokenPrice);
+            tokenPrice = secondTokenPrice;
+        }
+        else {
+            rewardTokenAmount = _amount.mul(1e18).div(tokenPrice);
+        }
+         
         require(totalRewardAmount.add(rewardTokenAmount) > maxSupply, "Presale.deposit: The desired amount must be less than the total presale amount");
         require(crssToken.balanceOf(address(this)).add(totalWithdrawedAmount).sub(totalRewardAmount) >= rewardTokenAmount, "Presale.deposit: not enough token to reward" );
         if(user.depositAmount == 0) {
