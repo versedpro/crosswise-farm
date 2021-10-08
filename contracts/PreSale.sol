@@ -85,10 +85,10 @@ contract Presale is Ownable, ReentrancyGuard {
     uint256 public immutable startTimestamp;
 
     /// @notice Softcap busd token amount. i.e. 200k BUSD
-    uint256 public softCapAmount = 200000000000000000000000;
+    uint256 public softCapAmount = 200000 * 1e18;
 
     /// @notice Hardcap busd token amount. i.e. 500k BUSD
-    uint256 public hardCapAmount = 500000000000000000000000;
+    uint256 public hardCapAmount = 500000 * 1e18;
 
     /// @notice Day count for 1 month
     uint256 public constant oneMonth = 30 days;
@@ -97,19 +97,19 @@ contract Presale is Ownable, ReentrancyGuard {
     uint256 public constant unlockPerMonth = 20;
 
     /// @notice Maximum BUSD amount that can be deposited per each wallet. i.e. 25k BUSD
-    uint256 public constant maxBusdPerWallet = 25000000000000000000000;
+    uint256 public constant maxBusdPerWallet = 25000 * 1e18;
 
     /// @notice Maximum CRSS token amount for Presale. i.e. 2M CRSS
-    uint256 public constant maxSupply = 2000000000000000000000000;
+    uint256 public constant maxSupply = 2000000 * 1e18;
 
     /// @notice Minimum BUSD token amount for deposit. i.e. 250 BUSD
-    uint256 public constant minPurchase = 250000000000000000000;
+    uint256 public constant minPurchase = 250 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.2 BUSD
-    uint256 public constant fistTokenPrice = 200000000000000000;
+    uint256 public constant fistTokenPrice = 2 * 1e17;
 
     /// @notice Token price for second stage. i.e. 0.3 BUSD
-    uint256 public constant secondTokenPrice = 300000000000000000;
+    uint256 public constant secondTokenPrice = 3 * 1e17;
 
     /// @notice Token price for presale. On softcap it's fistTokenPrice and it will be updated to secondTokenPrice on hardcap
     uint256 public tokenPrice = fistTokenPrice;
