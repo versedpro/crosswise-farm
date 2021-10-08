@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: UNLICENSED
+
 pragma solidity ^0.6.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -7,59 +9,119 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./libs/SafeBEP20.sol";
 import "./libs/IBEP20.sol";
 
+
+/**
+ * @title Presale smart contract that sells CRSS token using BUSD
+ */
+
 contract Presale is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
-    event Deposit(
-        address indexed depositUser, 
-        uint256 amount
-    );
-    
-    event Withdraw(
-        address indexed user, 
-        uint256 amount
+
+    /// @notice event emitted when softcap amount is updated
+    event UpdateSoftCapAmount(
+        uint256 softCapAmount
     );
 
+    /// @notice event emitted when hardcap amount is updated
+    event UpdateHardCapAmount(
+        uint256 hardCapAmount
+    );
+
+    /// @notice event emitted when address is set/unset from whitelist
     event SetWhiteList(
         address indexed addr,
         bool status
     );
 
+    /// @notice event emitted when user deposits busd
+    event Deposit(
+        address indexed depositUser, 
+        uint256 amount
+    );
+    
+    /// @notice event emitted when user withdraws the reward token
+    event Withdraw(
+        address indexed user, 
+        uint256 amount
+    );
+
+    /// @notice Information about user that buy crss token
     struct UserDetail {
         uint256 depositTime;
         uint256 totalRewardAmount;
         uint256 withdrawAmount;   
         uint256 depositAmount;
     }
-    
-    IBEP20 crssToken;
-    IBEP20 busd;
-    
-    mapping(address => UserDetail) public userDetail;
-    mapping(address => uint256) public deposits;
-    mapping(address => bool) whitelist;
 
+    /// @notice BEP20 token - Reward token
+    IBEP20 public immutable crssToken;
+
+    /// @notice BEP20 token - Deposit token
+    IBEP20 public immutable busd;
+    
+    /// @notice User address -> User information
+    mapping(address => UserDetail) public userDetail;
+
+    /// @notice Address -> Status(True/False) that represents whitelist.
+    mapping(address => bool) public whitelist;
+
+    /// @notice Investors address list
     address[] public investors;
 
-    address public masterWallet;
+    /// @notice Address that deposited fund will be sent
+    address public immutable masterWallet;
     
+    /// @notice Sum of each user's deposited busd amount
     uint256 public totalDepositedBusdBalance;
+
+    /// @notice Sum of each user's reward token amount 
     uint256 public totalRewardAmount;
+
+    /// @notice Sum of each user's withdrawed reward token amount
     uint256 public totalWithdrawedAmount;
 
-    uint256 public constant oneMonth = 30 days;
-    uint256 public constant unlockPerMonth = 20;
-    uint256 public startTimestamp;
-    uint256 public softCapAmount = 200000000000000000000000; // 200k USD
-    uint256 public hardCapAmount = 500000000000000000000000; // 500k USD
-    uint256 public fistTokenPrice = 200000000000000000; // 0.2 BUSD
-    uint256 public secondTokenPrice = 300000000000000000; // 0.3 BUSD
-    uint256 public tokenPrice = fistTokenPrice; // First Stage: 0.2 BUSD
-    // uint256 public hardCapPrice = 1000000000000000000; //1 BUSD
-    uint256 public maxBusdPerWallet = 25000000000000000000000; // 25k BUSD
-    uint256 public maxSupply = 2000000000000000000000000; // 2M CRSS
-    uint256 public minPurchase = 250000000000000000000;
+    /// @notice Presale start time
+    uint256 public immutable startTimestamp;
 
+    /// @notice Softcap busd token amount. i.e. 200k BUSD
+    uint256 public softCapAmount = 200000000000000000000000;
+
+    /// @notice Hardcap busd token amount. i.e. 500k BUSD
+    uint256 public hardCapAmount = 500000000000000000000000;
+
+    /// @notice Day count for 1 month
+    uint256 public constant oneMonth = 30 days;
+
+    /// @notice Unlock token percent per month. i.e. 20 = 20%
+    uint256 public constant unlockPerMonth = 20;
+
+    /// @notice Maximum BUSD amount that can be deposited per each wallet. i.e. 25k BUSD
+    uint256 public constant maxBusdPerWallet = 25000000000000000000000;
+
+    /// @notice Maximum CRSS token amount for Presale. i.e. 2M CRSS
+    uint256 public constant maxSupply = 2000000000000000000000000;
+
+    /// @notice Minimum BUSD token amount for deposit. i.e. 250 BUSD
+    uint256 public constant minPurchase = 250000000000000000000;
+
+    /// @notice Token price for first stage. i.e. 0.2 BUSD
+    uint256 public constant fistTokenPrice = 200000000000000000;
+
+    /// @notice Token price for second stage. i.e. 0.3 BUSD
+    uint256 public constant secondTokenPrice = 300000000000000000;
+
+    /// @notice Token price for presale. On softcap it's fistTokenPrice and it will be updated to secondTokenPrice on hardcap
+    uint256 public tokenPrice = fistTokenPrice;
+
+
+    /**
+     * @param _crssToken Address of reward token
+     * @param _busd Address of busd-staking token
+     * @param _masterWallet Address where collected funds will be forwarded to
+     * @param _startTimestamp Presale start time
+     */
+    
     constructor(
         IBEP20 _crssToken,
         IBEP20 _busd,
@@ -75,39 +137,64 @@ contract Presale is Ownable, ReentrancyGuard {
         busd = _busd;
         masterWallet = _masterWallet;
         startTimestamp = _startTimestamp;
-
     }
 
-    function investorCount() public view returns (uint256) {
+    /**
+     * @notice Method for getting total investors count
+     */
+    function investorCount() external view returns (uint256) {
         return investors.length;
     }
 
-    function allInvestors() public view returns (address[] memory) {
+    /**
+     * @notice Method for getting all investors address
+     */
+    function allInvestors() external view returns (address[] memory) {
         return investors;
     }
     
+    /**
+     * @notice Method for updating softcap amount
+     * @dev Only admin
+     * @param _softCapAmount New softcap amount
+     */
     function updateSoftCapAmount(uint256 _softCapAmount) external onlyOwner {
         require(_softCapAmount > 0, "Presale.updateSoftCapAmount: soft cap amount invalid");
         softCapAmount = _softCapAmount;
+
+        emit UpdateSoftCapAmount(_softCapAmount);
     }
 
+    /**
+     * @notice Method for updating hardcap amount
+     * @dev Only admin
+     * @param _hardCapAmount New hardcap amount
+     */
     function updateHardCapAmount(uint256 _hardCapAmount) external onlyOwner {
         require(_hardCapAmount > 0, "Presale.updateHardCapAmount: soft cap amount invalid");
         hardCapAmount = _hardCapAmount;
+
+        emit UpdateHardCapAmount(_hardCapAmount);
     }
 
-    function updateTokenPrice(uint256 _tokenPrice) external onlyOwner {
-        require(_tokenPrice > 0, "Presale.updateTokenPrice: soft cap amount invalid");
-        tokenPrice = _tokenPrice;
-    }
-
+    /**
+     * @notice Method for setting whitelist address for presale
+     * @dev Only admin
+     * @param _addr Address for whitelist
+     * @param _status Boolean value that determines to set/unset address to whitelist
+     */
     function setWhiteList(address _addr, bool _status) external onlyOwner {
         require(_addr != address(0), "Presale.setWhiteList: Zero Address");
         whitelist[_addr] = _status;
+
         emit SetWhiteList(_addr, _status);
     }
 
-    function deposit(uint256 _amount) external payable nonReentrant {
+    /**
+     * @notice Method for depositing busd token to buy Crss token
+     * @param _amount Busd token amount for depositing
+     */
+    function deposit(uint256 _amount) external nonReentrant {
         require(whitelist[msg.sender], "Presale.deposit: depositor should be whitelist member");
         require(_getNow() >= startTimestamp, "Presale.deposit: Presale is not active");
         require(totalDepositedBusdBalance + _amount <= hardCapAmount, "deposit is above hardcap limit");
@@ -132,36 +219,47 @@ contract Presale is Ownable, ReentrancyGuard {
             rewardTokenAmount = _amount.mul(1e18).div(tokenPrice);
         }
          
-        require(totalRewardAmount.add(rewardTokenAmount) > maxSupply, "Presale.deposit: The desired amount must be less than the total presale amount");
+        require(totalRewardAmount.add(rewardTokenAmount) <= maxSupply, "Presale.deposit: The desired amount must be less than the total presale amount");
         require(crssToken.balanceOf(address(this)).add(totalWithdrawedAmount).sub(totalRewardAmount) >= rewardTokenAmount, "Presale.deposit: not enough token to reward" );
+
+        busd.safeTransferFrom(msg.sender, masterWallet, _amount);
+
         if(user.depositAmount == 0) {
             investors.push(msg.sender);
         }
+
         user.depositTime = _getNow();
         user.depositAmount = user.depositAmount + _amount;
         user.totalRewardAmount = user.totalRewardAmount.add(rewardTokenAmount);
         totalRewardAmount = totalRewardAmount.add(rewardTokenAmount);
         totalDepositedBusdBalance = totalDepositedBusdBalance + _amount;
 
-        busd.safeTransferFrom(msg.sender, masterWallet, _amount);
-        
         emit Deposit(msg.sender, _amount);
     }
 
-    function withdrawToken(uint256 _amount) external {
+    /**
+     * @notice Method for withdrawing unlocked reward token.
+     * @dev Users can withdraw only unlocked amount.
+     * @param _amount Crss token amount to withdraw
+     */
+    function withdrawToken(uint256 _amount) external nonReentrant {
         uint256 unlocked = unlockedToken(msg.sender);
         require(unlocked >= _amount, "Presale.withdrawToken: Not enough token to withdraw.");
 
-        UserDetail storage user = userDetail[msg.sender];
+        crssToken.safeTransfer(msg.sender, _amount);
 
+        UserDetail storage user = userDetail[msg.sender];
         user.withdrawAmount = user.withdrawAmount.add(_amount);
         totalWithdrawedAmount = totalWithdrawedAmount.add(_amount);
-
-        crssToken.transfer(msg.sender, _amount);
         
         emit Withdraw(msg.sender, _amount);
     }
 
+    /**
+     * @notice Method for getting the unlocked crss token amount per each user
+     * @param _user Address of depositor
+     * @return uint256 The unlocked token amount
+     */
     function unlockedToken(address _user) public view returns (uint256) {
         UserDetail storage user = userDetail[_user];
 

@@ -102,7 +102,6 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
     
     function init_router(address router) public onlyOwner {
-        // TESTER: moving to a separate function to avoid breaking tests.
         ICrosswiseRouter02 _crosswiseRouter = ICrosswiseRouter02(router);
         // Create a uniswap pair for this new token
         crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory())
