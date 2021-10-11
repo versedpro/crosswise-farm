@@ -228,20 +228,13 @@ contract Presale is Ownable, ReentrancyGuard {
         require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
         uint256 rewardTokenAmount;
 
-        if (totalDepositedBusdBalance >= softCapAmount && tokenPrice == firstTokenPrice) {
-            tokenPrice = secondTokenPrice;
-        }
-        else if (totalDepositedBusdBalance >= softCapAmount + secondRoundAmount && tokenPrice == secondTokenPrice) {
-            tokenPrice = thirdTokenPrice;
-        }
-
-        if (totalDepositedBusdBalance < softCapAmount && softCapAmount.sub(totalDepositedBusdBalance) < _amount) {
+        if (totalDepositedBusdBalance < softCapAmount && softCapAmount.sub(totalDepositedBusdBalance) <= _amount) {
             uint256 amountSoft = softCapAmount.sub(totalDepositedBusdBalance);
             uint256 amountSecond = _amount.sub(amountSoft);
             rewardTokenAmount = amountSoft.mul(1e18).div(firstTokenPrice) + amountSecond.mul(1e18).div(secondTokenPrice);
             tokenPrice = secondTokenPrice;
         }
-        else if (totalDepositedBusdBalance < secondRoundAmount && secondRoundAmount.sub(totalDepositedBusdBalance) < _amount) {
+        else if (totalDepositedBusdBalance < secondRoundAmount && secondRoundAmount.sub(totalDepositedBusdBalance) <= _amount) {
             uint256 amountSecond = secondRoundAmount.sub(totalDepositedBusdBalance);
             uint256 amountHard = _amount.sub(amountSecond);
             rewaredTokenAmount = amountSecond.mul(1e18).div(secondTokenPrice) + amountHard.mul(1e18).div(thirdTokenPrice);
