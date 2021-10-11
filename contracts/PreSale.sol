@@ -33,6 +33,16 @@ contract Presale is Ownable, ReentrancyGuard {
         uint256 hardCapAmount
     );
 
+    /// @notice event emitted when min purchase amount is updated
+    event UpdateMinPurchase(
+        uint256 minPurchase
+    );
+
+    /// @notice event emitted when max busd per wallet is updated
+    event UpdateMaxBusdPerWallet(
+        uint256 maxBusdPerWallet
+    );
+
     /// @notice event emitted when address is set/unset from whitelist
     event SetWhiteList(
         address indexed addr,
@@ -98,20 +108,20 @@ contract Presale is Ownable, ReentrancyGuard {
     /// @notice Hardcap busd token amount. i.e. 1.1M BUSD
     uint256 public hardCapAmount = 1100000 * 1e18;
 
+    /// @notice Minimum BUSD token amount for deposit. i.e. 250 BUSD
+    uint256 public minPurchase = 250 * 1e18;
+
+    /// @notice Maximum BUSD amount that can be deposited per each wallet. i.e. 25k BUSD
+    uint256 public maxBusdPerWallet = 25000 * 1e18;
+
     /// @notice Day count for 1 month
     uint256 public constant oneMonth = 30 days;
 
     /// @notice Unlock token percent per month. i.e. 20 = 20%
     uint256 public constant unlockPerMonth = 20;
 
-    /// @notice Maximum BUSD amount that can be deposited per each wallet. i.e. 25k BUSD
-    uint256 public constant maxBusdPerWallet = 25000 * 1e18;
-
     /// @notice Maximum CRSS token amount for Presale. i.e. 3M(6% of Max supply) CRSS
     uint256 public constant maxSupply = 3000000 * 1e18;
-
-    /// @notice Minimum BUSD token amount for deposit. i.e. 250 BUSD
-    uint256 public constant minPurchase = 250 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.2 BUSD
     uint256 public constant firstTokenPrice = 2 * 1e17;
@@ -189,15 +199,27 @@ contract Presale is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Method for updating hardcap amount
+     * @notice Method for updating min purchase
      * @dev Only admin
-     * @param _hardCapAmount New hardcap amount
+     * @param _minPurchase New min purchase per user
      */
-    function updateHardCapAmount(uint256 _hardCapAmount) external onlyOwner {
-        require(_hardCapAmount > 0, "Presale.updateHardCapAmount: soft cap amount invalid");
-        hardCapAmount = _hardCapAmount;
+    function updateMinPurchase(uint256 _minPurchase) external onlyOwner {
+        require(_minPurchase > 0, "Presale.updateMinPurchase: min purchase amount invalid");
+        minPurchase = _minPurchase;
 
-        emit UpdateHardCapAmount(_hardCapAmount);
+        emit UpdateMinPurchase(_minPurchase);
+    }
+
+    /**
+     * @notice Method for updating maxBusdPerWallet
+     * @dev Only admin
+     * @param _maxBusdPerWallet New maxBusdPerWallet
+     */
+    function updateMaxBusdPerWallet(uint256 _maxBusdPerWallet) external onlyOwner {
+        require(_maxBusdPerWallet > 0, "Presale.updateMaxBusdPerWallet: max busd amount invalid");
+        maxBusdPerWallet = _maxBusdPerWallet;
+
+        emit UpdateMaxBusdPerWallet(_maxBusdPerWallet);
     }
 
     /**
