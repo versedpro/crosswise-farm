@@ -95,7 +95,7 @@ contract Presale is Ownable, ReentrancyGuard {
     /// @notice Second round busd token amount. i.e. 500k BUSD
     uint256 public secondRoundAmount = 500000 * 1e18;
 
-    /// @notice Hardcap busd token amount. i.e. 1M and 100k BUSD
+    /// @notice Hardcap busd token amount. i.e. 1.1M BUSD
     uint256 public hardCapAmount = 1100000 * 1e18;
 
     /// @notice Day count for 1 month
@@ -107,8 +107,8 @@ contract Presale is Ownable, ReentrancyGuard {
     /// @notice Maximum BUSD amount that can be deposited per each wallet. i.e. 25k BUSD
     uint256 public constant maxBusdPerWallet = 25000 * 1e18;
 
-    /// @notice Maximum CRSS token amount for Presale. i.e. 2M CRSS
-    uint256 public constant maxSupply = 2000000 * 1e18;
+    /// @notice Maximum CRSS token amount for Presale. i.e. 3M(6% of Max supply) CRSS
+    uint256 public constant maxSupply = 3000000 * 1e18;
 
     /// @notice Minimum BUSD token amount for deposit. i.e. 250 BUSD
     uint256 public constant minPurchase = 250 * 1e18;
