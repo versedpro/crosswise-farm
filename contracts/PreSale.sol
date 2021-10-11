@@ -23,6 +23,11 @@ contract Presale is Ownable, ReentrancyGuard {
         uint256 softCapAmount
     );
 
+    /// @notice event emitted when second round amount is updated
+    event updateSecondRoundAmount(
+        uint256 secondRoundAmount
+    );
+
     /// @notice event emitted when hardcap amount is updated
     event UpdateHardCapAmount(
         uint256 hardCapAmount
