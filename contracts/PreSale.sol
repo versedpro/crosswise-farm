@@ -24,7 +24,7 @@ contract Presale is Ownable, ReentrancyGuard {
     );
 
     /// @notice event emitted when second round amount is updated
-    event updateSecondRoundAmount(
+    event UpdateSecondRoundAmount(
         uint256 secondRoundAmount
     );
 
@@ -237,7 +237,7 @@ contract Presale is Ownable, ReentrancyGuard {
         else if (totalDepositedBusdBalance < secondRoundAmount && secondRoundAmount.sub(totalDepositedBusdBalance) <= _amount) {
             uint256 amountSecond = secondRoundAmount.sub(totalDepositedBusdBalance);
             uint256 amountHard = _amount.sub(amountSecond);
-            rewaredTokenAmount = amountSecond.mul(1e18).div(secondTokenPrice) + amountHard.mul(1e18).div(thirdTokenPrice);
+            rewardTokenAmount = amountSecond.mul(1e18).div(secondTokenPrice) + amountHard.mul(1e18).div(thirdTokenPrice);
             tokenPrice = thirdTokenPrice;
         }
         else {
