@@ -187,6 +187,18 @@ contract Presale is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Method for updating hardcap amount
+     * @dev Only admin
+     * @param _hardCapAmount New hardcap amount
+     */
+    function updateHardCapAmount(uint256 _hardCapAmount) external onlyOwner {
+        require(_hardCapAmount > 0, "Presale.updateHardCapAmount: hard cap amount invalid");
+        hardCapAmount = _hardCapAmount;
+
+        emit UpdateHardCapAmount(_hardCapAmount);
+    }
+
+    /**
      * @notice Method for updating second round amount
      * @dev Only admin
      * @param _secondRoundAmount New second round amount
