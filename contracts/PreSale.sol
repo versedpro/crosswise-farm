@@ -87,8 +87,11 @@ contract Presale is Ownable, ReentrancyGuard {
     /// @notice Softcap busd token amount. i.e. 200k BUSD
     uint256 public softCapAmount = 200000 * 1e18;
 
-    /// @notice Hardcap busd token amount. i.e. 500k BUSD
-    uint256 public hardCapAmount = 500000 * 1e18;
+    /// @notice Second round busd token amount. i.e. 500k BUSD
+    uint256 public secondRoundAmount = 500000 * 1e18;
+
+    /// @notice Hardcap busd token amount. i.e. 1M and 100k BUSD
+    uint256 public hardCapAmount = 1100000 * 1e18;
 
     /// @notice Day count for 1 month
     uint256 public constant oneMonth = 30 days;
@@ -106,13 +109,16 @@ contract Presale is Ownable, ReentrancyGuard {
     uint256 public constant minPurchase = 250 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.2 BUSD
-    uint256 public constant fistTokenPrice = 2 * 1e17;
+    uint256 public constant firstTokenPrice = 2 * 1e17;
 
     /// @notice Token price for second stage. i.e. 0.3 BUSD
     uint256 public constant secondTokenPrice = 3 * 1e17;
 
-    /// @notice Token price for presale. On softcap it's fistTokenPrice and it will be updated to secondTokenPrice on hardcap
-    uint256 public tokenPrice = fistTokenPrice;
+    /// @notice Token price for third stage. i.e. 0.6 BUSD
+    uint256 public constant thirdTokenPrice = 6 * 1e17;
+
+    /// @notice Token price for presale. On softcap it's firstTokenPrice and it will be updated to secondTokenPrice and then thirdTokenPrice on hardcap
+    uint256 public tokenPrice = firstTokenPrice;
 
 
     /**
@@ -166,6 +172,18 @@ contract Presale is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Method for updating second round amount
+     * @dev Only admin
+     * @param _secondRoundAmount New second round amount
+     */
+    function updateSecondRoundAmount(uint256 _secondRoundAmount) external onlyOwner {
+        require(_secondRoundAmount > 0, "Presale.updateSoftCapAmount: soft cap amount invalid");
+        secondRoundAmount = _secondRoundAmount;
+
+        emit UpdateSoftCapAmount(_secondRoundAmount);
+    }
+
+    /**
      * @notice Method for updating hardcap amount
      * @dev Only admin
      * @param _hardCapAmount New hardcap amount
@@ -205,15 +223,24 @@ contract Presale is Ownable, ReentrancyGuard {
         require(user.depositAmount + _amount <= maxBusdPerWallet, "Presale.deposit: deposit amount is bigger than max deposit amount");
         uint256 rewardTokenAmount;
 
-        if (totalDepositedBusdBalance >= softCapAmount && tokenPrice != secondTokenPrice) {
+        if (totalDepositedBusdBalance >= softCapAmount && tokenPrice == firstTokenPrice) {
             tokenPrice = secondTokenPrice;
         }
+        else if (totalDepositedBusdBalance >= softCapAmount + secondRoundAmount && tokenPrice == secondTokenPrice) {
+            tokenPrice = thirdTokenPrice;
+        }
 
-        if(totalDepositedBusdBalance < softCapAmount && softCapAmount.sub(totalDepositedBusdBalance) < _amount) {
+        if (totalDepositedBusdBalance < softCapAmount && softCapAmount.sub(totalDepositedBusdBalance) < _amount) {
             uint256 amountSoft = softCapAmount.sub(totalDepositedBusdBalance);
-            uint256 amountHard = _amount.sub(amountSoft);
-            rewardTokenAmount = amountSoft.mul(1e18).div(fistTokenPrice) + amountHard.mul(1e18).div(secondTokenPrice);
+            uint256 amountSecond = _amount.sub(amountSoft);
+            rewardTokenAmount = amountSoft.mul(1e18).div(firstTokenPrice) + amountSecond.mul(1e18).div(secondTokenPrice);
             tokenPrice = secondTokenPrice;
+        }
+        else if (totalDepositedBusdBalance < secondRoundAmount && secondRoundAmount.sub(totalDepositedBusdBalance) < _amount) {
+            uint256 amountSecond = secondRoundAmount.sub(totalDepositedBusdBalance);
+            uint256 amountHard = _amount.sub(amountSecond);
+            rewaredTokenAmount = amountSecond.mul(1e18).div(secondTokenPrice) + amountHard.mul(1e18).div(thirdTokenPrice);
+            tokenPrice = thirdTokenPrice;
         }
         else {
             rewardTokenAmount = _amount.mul(1e18).div(tokenPrice);
