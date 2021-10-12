@@ -43,6 +43,21 @@ contract Presale is Ownable, ReentrancyGuard {
         uint256 maxBusdPerWallet
     );
 
+    /// @notice event emitted when first token price is updated
+    event UpdateFirstTokenPrice(
+        uint256 firstTokenPrice
+    );
+
+    /// @notice event emitted when second token price is updated
+    event UpdateSecondTokenPrice(
+        uint256 secondTokenPrice
+    );
+
+    /// @notice event emitted when third token price is updated
+    event UpdateThirdTokenPrice(
+        uint256 thirdTokenPrice
+    );
+
     /// @notice event emitted when address is set/unset from whitelist
     event SetWhiteList(
         address indexed addr,
@@ -124,13 +139,13 @@ contract Presale is Ownable, ReentrancyGuard {
     uint256 public constant maxSupply = 3000000 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.2 BUSD
-    uint256 public constant firstTokenPrice = 2 * 1e17;
+    uint256 public firstTokenPrice = 2 * 1e17;
 
     /// @notice Token price for second stage. i.e. 0.3 BUSD
-    uint256 public constant secondTokenPrice = 3 * 1e17;
+    uint256 public secondTokenPrice = 3 * 1e17;
 
     /// @notice Token price for third stage. i.e. 0.6 BUSD
-    uint256 public constant thirdTokenPrice = 6 * 1e17;
+    uint256 public thirdTokenPrice = 6 * 1e17;
 
     /// @notice Token price for presale. On softcap it's firstTokenPrice and it will be updated to secondTokenPrice and then thirdTokenPrice on hardcap
     uint256 public tokenPrice = firstTokenPrice;
@@ -232,6 +247,42 @@ contract Presale is Ownable, ReentrancyGuard {
         maxBusdPerWallet = _maxBusdPerWallet;
 
         emit UpdateMaxBusdPerWallet(_maxBusdPerWallet);
+    }
+
+    /**
+     * @notice Method for updating firstTokenPrice
+     * @dev Only admin
+     * @param _firstTokenPrice New first token price
+     */
+    function updateFirstTokenPrice(uint256 _firstTokenPrice) external onlyOwner {
+        require(_firstTokenPrice > 0, "Presale.updateFirstTokenPrice: first token price invalid");
+        firstTokenPrice = _firstTokenPrice;
+
+        emit UpdateFirstTokenPrice(_firstTokenPrice);
+    }
+
+    /**
+     * @notice Method for updating secondTokenPrice
+     * @dev Only admin
+     * @param _secondTokenPrice New second token price
+     */
+    function updateSecondTokenPrice(uint256 _secondTokenPrice) external onlyOwner {
+        require(_secondTokenPrice > 0, "Presale.updateSecondTokenPrice: second token price invalid");
+        secondTokenPrice = _secondTokenPrice;
+
+        emit UpdateSecondTokenPrice(_secondTokenPrice);
+    }
+
+    /**
+     * @notice Method for updating thirdTokenPrice
+     * @dev Only admin
+     * @param _thirdTokenPrice New third token price
+     */
+    function updateThirdTokenPrice(uint256 _thirdTokenPrice) external onlyOwner {
+        require(_thirdTokenPrice > 0, "Presale.updateThirdTokenPrice: third token price invalid");
+        thirdTokenPrice = _thirdTokenPrice;
+
+        emit UpdateThirdTokenPrice(_thirdTokenPrice);
     }
 
     /**
