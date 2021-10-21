@@ -26,6 +26,7 @@ contract CrssToken is Context, IBEP20, Ownable {
     string private _symbol;
     uint8 private _decimals;
 
+    uint256 public maxSupply = 50000000000000000000000000;
     uint256 public devFee;
     uint256 public liquidityFee;
     uint256 public buybackFee;
@@ -101,11 +102,10 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
     
     function init_router(address router) public onlyOwner {
-        // TESTER: moving to a separate function to avoid breaking tests.
         ICrosswiseRouter02 _crosswiseRouter = ICrosswiseRouter02(router);
         // Create a uniswap pair for this new token
         crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory())
-        .createPair(address(this), _crosswiseRouter.WETH());
+        .createPair(address(this), _crosswiseRouter.WBNB());
 
         // set the rest of the contract variables
         crosswiseRouter = _crosswiseRouter;
@@ -151,7 +151,7 @@ contract CrssToken is Context, IBEP20, Ownable {
 
     function _mint(address account, uint256 amount) internal {
         require(account != address(0), 'BEP20: mint to the zero address');
-
+        require(_totalSupply + amount <= maxSupply, 'over max supply');
         _totalSupply = _totalSupply.add(amount);
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
@@ -293,10 +293,10 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
 
     function swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> WETH
+        // generate the uniswap pair path of token -> WBNB
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = crosswiseRouter.WETH();
+        path[1] = crosswiseRouter.WBNB();
 
         _approve(address(this), address(crosswiseRouter), tokenAmount);
 

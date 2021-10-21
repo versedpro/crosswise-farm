@@ -1,5 +1,10 @@
 const Presale = artifacts.require("Presale");
 
+const crss = "0x0999ba9aEA33DcA5B615fFc9F8f88D260eAB74F1";
+const busd = "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56";
+const masterWallet= "0x2A479056FaC97b62806cc740B11774E6598B1649"; 
+const presaleStart = 1635336000; //Date and time (GMT): Wednesday, October 27, 2021 12:00:00 PM
 module.exports = async function(deployer) {
-  deployer.deploy(Presale, "0x74A8172C7EF1FD2637a2e605819ac2f9bc4A113f", "0xeD24FC36d5Ee211Ea25A80239Fb8C4Cfd80f12Ee", "0x6973a5D5e2Bd3bBDe498104FeCDF3132A3c545aB", "1624561779");
+  const block = await web3.eth.getBlock("latest");
+  await deployer.deploy(Presale, crss, busd, masterWallet, presaleStart);
 };
