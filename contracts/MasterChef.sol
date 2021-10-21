@@ -49,6 +49,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 lastRewardBlock;  // Last block number that CRSSs distribution occurs.
         uint256 accCrssPerShare;   // Accumulated CRSSs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
+        address strat;            // Strategy address that will auto compound want tokens
     }
 
     // The CRSS TOKEN!
@@ -69,6 +70,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Max harvest interval: 14 days.
     uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days;
+    // CRSS total supply: 50 M
+    uint256 public CRSSMaxSupply = 50000000e18;
 
     uint256 public constant stakePoolId = 0;
 
@@ -136,7 +139,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate, address _strat) public onlyOwner {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -148,7 +151,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
             accCrssPerShare: 0,
-            depositFeeBP: _depositFeeBP
+            depositFeeBP: _depositFeeBP,
+            strat: _strat
         }));
     }
 
@@ -165,6 +169,9 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Return reward multiplier over the given _from to _to block.
     function getMultiplier(uint256 _from, uint256 _to) public pure returns (uint256) {
+        if (IERC20(CRSS).totalSupply() >= CRSSMaxSupply) {
+            return 0;
+        }
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
     }
 
@@ -173,14 +180,32 @@ contract MasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accCrssPerShare = pool.accCrssPerShare;
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-        if (block.number > pool.lastRewardBlock && lpSupply != 0) {
+        // uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 sharesTotal = IStrategy(pool.strat).sharesTotal();
+        // if (block.number > pool.lastRewardBlock && lpSupply != 0) {
+        if (block.number > pool.lastRewardBlock && sharesTotal != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
             uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-            accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
+            // accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
+            accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(sharesTotal));
         }
         uint256 pending = user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt);
         return pending.add(user.rewardLockedUp);
+        // return user.shares.mul(accNATIVEPerShare).div(1e12).sub(user.rewardDebt);
+    }
+
+    // View function to see staked Want tokens on frontend.
+    function stakedWantTokens(uint256 _pid, address _user) external view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][_user];
+
+        uint256 sharesTotal = IStrategy(pool.strat).sharesTotal();
+        uint256 wantLockedTotal =
+            IStrategy(poolInfo[_pid].strat).wantLockedTotal();
+        if (sharesTotal == 0) {
+            return 0;
+        }
+        return user.amount.mul(wantLockedTotal).div(sharesTotal);
     }
     
     // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
@@ -214,8 +239,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-        if (lpSupply == 0 || pool.allocPoint == 0) {
+        // uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+        uint256 sharesTotal = IStrategy(pool.strat).sharesTotal();
+        // if (lpSupply == 0 || pool.allocPoint == 0) {
+        if (sharesTotal == 0 || pool.allocPoint == 0) {
             pool.lastRewardBlock = block.number;
             return;
         }
@@ -225,7 +252,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         crss.mint(devAddress, crssReward.mul(87).div(1000));
         crss.mint(address(this), crssReward);
-        pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
+        // pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
+        pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(sharesTotal));
         pool.lastRewardBlock = block.number;
     }
 
@@ -250,7 +278,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         }
     }
 
-    // Deposit LP tokens to MasterChef for CRSS allocation.
+    // Deposit LP tokens to MasterChef for CRSS allocation. Start autocompouning
     function deposit(uint256 _pid, uint256 _amount, address _referrer, bool immediateClaim) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
