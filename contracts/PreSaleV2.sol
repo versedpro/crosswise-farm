@@ -107,7 +107,7 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
     /// @notice Softcap busd token amount. i.e. 375k BUSD
     uint256 public softCapAmount = 375000 * 1e18;
 
-    /// @notice Hardcap busd token amount. i.e. 400k BUSD
+    /// @notice Hardcap busd token amount. i.e. 775k BUSD
     uint256 public hardCapAmount = 775000 * 1e18;
 
     /// @notice Minimum BUSD token amount for deposit. i.e. 1 BUSD
