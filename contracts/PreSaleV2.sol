@@ -122,8 +122,8 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
     /// @notice Unlock token percent per month. i.e. 20 = 20%
     uint256 public constant unlockPerMonth = 20;
 
-    /// @notice Maximum CRSS token amount for Presale. i.e. 3M(6% of Max supply) CRSS
-    uint256 public constant maxSupply = 3000000 * 1e18;
+    /// @notice Maximum CRSS token amount for Presale. i.e. 1M(2% of Max supply) CRSS
+    uint256 public constant maxSupply = 1000000 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.75 BUSD
     uint256 public firstTokenPrice = 75 * 1e16;
