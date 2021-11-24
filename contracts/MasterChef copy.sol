@@ -3,16 +3,11 @@
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
 import "./libs/ICrssReferral.sol";
 import "./libs/Ownable.sol";
-import './libs/AddrArrayLib.sol';
-import "./interface/IStrategy.sol";
-import "./interface/ICrosswiseRouter02.sol";
-
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./CrssToken.sol";
 import "./xCrssToken.sol";
@@ -27,14 +22,13 @@ import "./xCrssToken.sol";
 contract MasterChef is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
-    using AddrArrayLib for AddrArrayLib.Addresses;
 
     // Info of each user.
     struct UserInfo {
         uint256 amount;         // How many LP tokens the user has provided.
         uint256 rewardDebt;     // Reward debt. See explanation below.
-        uint256 crssRewardLockedUp;
-        bool isAuto;
+        uint256 rewardLockedUp;  // Reward locked up.
+        // uint256 nextHarvestUntil; // When can the user harvest again.
         //
         // We do some fancy math here. Basically, any point in time, the amount of CRSSs
         // entitled to a user but is pending to be distributed is:
@@ -54,17 +48,15 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 allocPoint;       // How many allocation points assigned to this pool. CRSSs to distribute per block.
         uint256 lastRewardBlock;  // Last block number that CRSSs distribution occurs.
         uint256 accCrssPerShare;   // Accumulated CRSSs per share, times 1e12. See below.
-        uint256 depositFeeBP;      // Deposit fee in basis points
-        address strategy;       // Strategy address
-        bool isAuto;        
+        uint16 depositFeeBP;      // Deposit fee in basis points
     }
 
     // The CRSS TOKEN!
     CrssToken public crss;
     // The XCRSS TOKEN!
     xCrssToken public xCrss;
-    // Crss router addressList
-    ICrosswiseRouter02 public crssRouterAddress;
+    //steps in time to change crssPerBlock
+    uint256 public immutable timeFirstStep;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
@@ -80,61 +72,54 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     uint256 public constant stakePoolId = 0;
 
-    // Set on global level, could be passed to functions via arguments
-    uint256 public constant routerDeadlineDuration = 300; 
-
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
-    mapping(uint256 => AddrArrayLib.Addresses) private autoAddressByPid;
-
-    mapping(uint256 => uint256) public totalShares;
-
-    mapping(uint256 => uint256) public totalLocked;
-    
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
     // The block number when CRSS mining starts.
     uint256 public startBlock;
+    // Total locked up rewards
+    uint256 public totalLockedUpRewards;
 
     // Crss referral contract address.
     ICrssReferral public crssReferral;
     // Referral commission rate in basis points.
-    uint256 public referralCommissionRate = 100;
+    uint16 public referralCommissionRate = 100;
     // Max referral commission rate: 10%.
-    uint256 public constant MAXIMUM_REFERRAL_COMMISSION_RATE = 1000;
+    uint16 public constant MAXIMUM_REFERRAL_COMMISSION_RATE = 1000;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
+    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
     event CrssPerBlockUpdated(uint256 crssPerBlock);
 
     constructor(
         CrssToken _crss,
         xCrssToken _xCrss,
-        ICrosswiseRouter02 _crssRouterAddress,
         address _devAddress,
         address _treasuryAddress,
         uint256 _startBlock
     ) public {
         require(address(_crss) != address(0), "constructor: crss token address is zero address");
         require(address(_xCrss) != address(0), "constructor: xcrss token address is zero address");
-        require(address(_crssRouterAddress) != address(0), "constructor: crss router address is zero address");
         require(_devAddress != address(0), "constructor: dev address is zero address");
         require(_treasuryAddress != address(0), "constructor: treasury address is zero address");
         
 
         crss = _crss;
         xCrss = _xCrss;
-        crssRouterAddress = _crssRouterAddress;
         startBlock = _startBlock;
         crssPerBlock = 1.2 * 10 ** 18;
 
         devAddress = _devAddress;
         treasuryAddress = _treasuryAddress;
+
+        timeFirstStep = now + 14 days;
     }
 
     function poolLength() external view returns (uint256) {
@@ -151,7 +136,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint256 _depositFeeBP, address _strategy, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -163,13 +148,12 @@ contract MasterChef is Ownable, ReentrancyGuard {
             allocPoint: _allocPoint,
             lastRewardBlock: lastRewardBlock,
             accCrssPerShare: 0,
-            depositFeeBP: _depositFeeBP,
-            strategy: _strategy
+            depositFeeBP: _depositFeeBP
         }));
     }
 
     // Update the given pool's CRSS allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint256 _depositFeeBP, address _strategy, bool _withUpdate) public onlyOwner {
+    function set(uint256 _pid, uint256 _allocPoint, uint16 _depositFeeBP, bool _withUpdate) public onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -177,7 +161,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
-        poolInfo[_pid].strategy = _strategy;
     }
 
     // Return reward multiplier over the given _from to _to block.
@@ -190,18 +173,14 @@ contract MasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accCrssPerShare = pool.accCrssPerShare;
-        uint256 lpSupply;
-        if(pool.strategy == address(0)) {
-            lpSupply = pool.lpToken.balanceOf(address(this));
-        } else {
-            lpSupply = IStrategy(pool.strategy).sharesTotal();
-        }
+        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
             uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
             accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         }
-        return user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
+        uint256 pending = user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt);
+        return pending.add(user.rewardLockedUp);
     }
     
     // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
@@ -235,17 +214,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        // uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-        uint256 lpSupply;
-        if(pool.strategy == address(0)) {
-            lpSupply = pool.lpToken.balanceOf(address(this));
-        } else {
-            lpSupply = IStrategy(pool.strategy).sharesTotal();
-        }
+        uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (lpSupply == 0 || pool.allocPoint == 0) {
             pool.lastRewardBlock = block.number;
             return;
         }
+        if (now < timeFirstStep)
+            crssPerBlock = 1 * 10 ** 18;
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
         uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         crss.mint(devAddress, crssReward.mul(87).div(1000));
@@ -253,47 +228,20 @@ contract MasterChef is Ownable, ReentrancyGuard {
         pool.accCrssPerShare = pool.accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         pool.lastRewardBlock = block.number;
     }
+
     // user can choose autoStake reward to stake pool instead just harvest
     function stakeReward(uint256 _pid) public {
-        PoolInfo storage pool = poolInfo[_pid];
+
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require(pool.strategy != address(0), "Not Auto Compounding pool");
 
         if (user.amount > 0) {
+            PoolInfo storage pool = poolInfo[_pid];
 
             updatePool(_pid);
 
             uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
                 safeCrssTransfer(msg.sender, pending);
-                // cast to pair:
-                IUniswapV2Pair pair = IUniswapV2Pair(pool.lpToken);
-                // used to extrac balances
-                address token0 = pair.token0();
-                address token1 = pair.token1();
-                if (address(crss) != token0) {
-                    // Swap half earned to token0
-                    crssRouterAddress
-                        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                        pending.div(2),
-                        0,
-                        [address(crss), token0],
-                        address(this),
-                        now + routerDeadlineDuration
-                    );
-                }
-
-                if (address(crss) != token1) {
-                    // Swap half earned to token1
-                    crssRouterAddress
-                        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                        pending.div(2),
-                        0,
-                        [address(crss), token1],
-                        address(this),
-                        now + routerDeadlineDuration
-                    );
-                }
                 payReferralCommission(msg.sender, pending);
                 
                 deposit(stakePoolId, pending, address(0), false);
@@ -303,12 +251,9 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
 
     // Deposit LP tokens to MasterChef for CRSS allocation.
-    function deposit(uint256 _pid, uint256 _amount, address _referrer, bool immediateClaim, bool isAuto) public nonReentrant {
+    function deposit(uint256 _pid, uint256 _amount, address _referrer, bool immediateClaim) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        if(user.amount > 0) {
-            require(user.isAuto == isAuto, "Cannot change auto compound in progress");
-        }
         updatePool(_pid);
         if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
             crssReferral.recordReferral(msg.sender, _referrer);
@@ -319,17 +264,20 @@ contract MasterChef is Ownable, ReentrancyGuard {
             pool.lpToken.transferFrom(address(msg.sender), address(this), _amount);
             uint256 newBalance = pool.lpToken.balanceOf(address(this));
             _amount = newBalance.sub(oldBalance);
+            // Once deposit token is Crss.
+            // if (address(pool.lpToken) == address(crss)) {
+            //     uint256 transferTax = _amount.mul(400).div(10000);
+            //     _amount = _amount.sub(transferTax);
+            // }
+            
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
-                pool.lpToken.transfer(treasuryAddress, depositFee.div(2));
-                pool.lpToken.transfer(devAddress, depositFee.div(2));
-                _amount = _amount.sub(depositFee);
+                pool.lpToken.transfer(treasuryAddress, depositFee.mul(50).div(100));
+                pool.lpToken.transfer(devAddress, depositFee.mul(50).div(100));
+                user.amount = user.amount.add(_amount).sub(depositFee);
+            } else {
+                user.amount = user.amount.add(_amount);
             }
-            if(pool.strategy != address(0)) {
-                pool.lpToken.safeIncreaseAllowance(pool.strategy, _amount);
-                _amount = IStrategy(pool.strategy).deposit(msg.sender, _amount);
-            }
-            user.amount = user.amount.add(_amount);
         }
         user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
@@ -342,15 +290,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
         payOrLockuppendingCrss(_pid, false);
-
         if (_amount > 0) {
-            if(pool.strategy != address(0)) { 
-                _amount = IStrategy(pool.strategy).withdraw(msg.sender, _amount);
-            }
             user.amount = user.amount.sub(_amount);
             pool.lpToken.transfer(address(msg.sender), _amount);
         }
-
         user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
     }
@@ -362,10 +305,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
-        user.crssRewardLockedUp = 0;
-        if(pool.strategy != address(0)) { 
-            amount = IStrategy(pool.strategy).withdraw(msg.sender, amount);
-        }
+        user.rewardLockedUp = 0;
         pool.lpToken.transfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
@@ -377,12 +317,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
         if(user.amount > 0)
         {
-            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
-                if(user.isAuto) {
-                    user.crssRewardLockedUp = pending;
-                    return;
-                }
                 // send rewards
                 if(_immediateClaim) {
                     uint256 crssReward = pending.mul(75).div(100);
@@ -401,6 +337,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
                     xCrss.depositToken(msg.sender, xCrssReward);
                 }   
                 payReferralCommission(msg.sender, pending);
+                
+                
             }
         }
     }
@@ -441,7 +379,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
 
     // Update referral commission rate by the owner
-    function setReferralCommissionRate(uint256 _referralCommissionRate) public onlyOwner {
+    function setReferralCommissionRate(uint16 _referralCommissionRate) public onlyOwner {
         require(_referralCommissionRate <= MAXIMUM_REFERRAL_COMMISSION_RATE, "setReferralCommissionRate: invalid referral commission rate basis points");
         referralCommissionRate = _referralCommissionRate;
     }
