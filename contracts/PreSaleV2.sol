@@ -111,10 +111,10 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
     uint256 public immutable startTimestamp;
 
     /// @notice Softcap busd token amount. i.e. 375k BUSD
-    uint256 public softCapAmount = 375000 * 1e18;
+    uint256 public softCapAmount = 350000 * 1e18;
 
     /// @notice Hardcap busd token amount. i.e. 775k BUSD
-    uint256 public hardCapAmount = 775000 * 1e18;
+    uint256 public hardCapAmount = 750000 * 1e18;
 
     /// @notice Minimum BUSD token amount for deposit. i.e. 1 BUSD
     uint256 public minPurchase = 1 * 1e18;
@@ -132,7 +132,7 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
     uint256 public constant maxSupply = 1000000 * 1e18;
 
     /// @notice Token price for first stage. i.e. 0.75 BUSD
-    uint256 public firstTokenPrice = 75 * 1e16;
+    uint256 public firstTokenPrice = 7 * 1e17;
 
     /// @notice Token price for second stage. i.e. 0.8 BUSD
     uint256 public secondTokenPrice = 8 * 1e17;
