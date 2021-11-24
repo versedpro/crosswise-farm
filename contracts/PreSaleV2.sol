@@ -54,6 +54,12 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
         bool status
     );
 
+    /// @notice event emitted when address is set/unset from whitelist
+    event SetWhiteLists(
+        address[] addrs,
+        bool status
+    );
+
     /// @notice event emitted when user deposits busd
     event Deposit(
         address indexed depositUser, 
@@ -256,6 +262,22 @@ contract PresaleV2 is Ownable, ReentrancyGuard {
         whitelist[_addr] = _status;
 
         emit SetWhiteList(_addr, _status);
+    }
+
+
+    /**
+     * @notice Method for setting whitelist address for presale
+     * @dev Only admin
+     * @param _addrs Address for whitelist
+     * @param _status Boolean value that determines to set/unset address to whitelist
+     */
+    function setWhiteLists(address[] calldata _addrs, bool _status) external onlyOwner {
+        for (uint256 i = 0; i < _addrs.length; i ++)
+        {
+            require(_addrs[i] != address(0), "Presale.setWhiteLists: Zero Address");
+            whitelist[_addrs[i]] = _status;
+        }
+        emit SetWhiteLists(_addrs, _status);
     }
 
     /**
