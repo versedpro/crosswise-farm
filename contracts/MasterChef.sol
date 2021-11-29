@@ -11,6 +11,7 @@ import "./libs/ICrssReferral.sol";
 import "./libs/Ownable.sol";
 import './libs/AddrArrayLib.sol';
 import "./interface/IStrategy.sol";
+import "./interface/ICrosswisePair.sol";
 import "./interface/ICrosswiseRouter02.sol";
 
 
@@ -34,6 +35,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 amount;         // How many LP tokens the user has provided.
         uint256 rewardDebt;     // Reward debt. See explanation below.
         uint256 crssRewardLockedUp;
+        bool isVest;
         bool isAuto;
         //
         // We do some fancy math here. Basically, any point in time, the amount of CRSSs
@@ -56,7 +58,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 accCrssPerShare;   // Accumulated CRSSs per share, times 1e12. See below.
         uint256 depositFeeBP;      // Deposit fee in basis points
         address strategy;       // Strategy address
-        bool isAuto;        
     }
 
     // The CRSS TOKEN!
@@ -90,8 +91,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
     mapping(uint256 => AddrArrayLib.Addresses) private autoAddressByPid;
 
     mapping(uint256 => uint256) public totalShares;
-
-    mapping(uint256 => uint256) public totalLocked;
     
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
@@ -141,6 +140,39 @@ contract MasterChef is Ownable, ReentrancyGuard {
         return poolInfo.length;
     }
 
+    function getUserDepositBalanceByPid(uint256 _pid, address _user) internal view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][_user];
+        if(pool.strategy == address(0) && user.isAuto) {
+            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+            return user.amount.mul(lpSupply).div(totalShares[_pid]);
+        }
+        else {
+            return user.amount;
+        }
+    }
+
+     function stakedTokens(uint256 _pid, address _user) external view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][_user];
+
+        if(pool.strategy != address(0)) {
+            uint256 sharesTotal = IStrategy(pool.strategy).sharesTotal();
+            uint256 LockedTotal = IStrategy(pool.strategy).wantLockedTotal();
+            if (sharesTotal == 0) {
+                return 0;
+            }
+            return user.amount.mul(LockedTotal).div(sharesTotal);
+        }
+        else if(user.isAuto) {
+            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+            return user.amount.mul(lpSupply).div(totalShares[_pid]);
+        }
+        else {
+            return user.amount;
+        }
+    }
+    
     // update crss reward count per block
     function updateCrssPerBlock(uint256 _crssPerBlock) public onlyOwner {
         require(_crssPerBlock != 0, "Reward token count per block can't be zero");
@@ -196,30 +228,33 @@ contract MasterChef is Ownable, ReentrancyGuard {
         } else {
             lpSupply = IStrategy(pool.strategy).sharesTotal();
         }
+        
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
             uint256 crssReward = multiplier.mul(crssPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
             accCrssPerShare = accCrssPerShare.add(crssReward.mul(1e12).div(lpSupply));
         }
-        return user.amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
+
+        uint256 amount = getUserDepositBalanceByPid(_pid, _user);
+        return amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
     }
     
-    // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
-    function massHarvest(uint256[] memory pools, bool immediateClaim) public {
-        uint256 poolLength = pools.length;
-        address nulladdress = address(0);
-        for (uint256 i = 0; i < poolLength; i++) {
-            deposit(pools[i], 0, nulladdress, immediateClaim);
-        }
-    }
+    // // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
+    // function massHarvest(uint256[] memory pools, bool isVest) public {
+    //     uint256 poolLength = pools.length;
+    //     address nulladdress = address(0);
+    //     for (uint256 i = 0; i < poolLength; i++) {
+    //         deposit(pools[i], 0, nulladdress, isVest);
+    //     }
+    // }
 
-    // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
-    function massStake(uint256[] memory pools) public {
-        uint256 poolLength = pools.length;
-        for (uint256 i = 0; i < poolLength; i++) {
-            stakeReward(pools[i]);
-        }
-    }
+    // // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
+    // function massEarn(uint256[] memory pools) public {
+    //     uint256 poolLength = pools.length;
+    //     for (uint256 i = 0; i < poolLength; i++) {
+    //         earn(pools[i]);
+    //     }
+    // }
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
@@ -235,7 +270,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        // uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         uint256 lpSupply;
         if(pool.strategy == address(0)) {
             lpSupply = pool.lpToken.balanceOf(address(this));
@@ -254,66 +288,109 @@ contract MasterChef is Ownable, ReentrancyGuard {
         pool.lastRewardBlock = block.number;
     }
     // user can choose autoStake reward to stake pool instead just harvest
-    function stakeReward(uint256 _pid) public {
+    function earn(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msg.sender];
-        require(pool.strategy != address(0), "Not Auto Compounding pool");
-
-        if (user.amount > 0) {
-
-            updatePool(_pid);
-
-            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
-            if (pending > 0) {
-                safeCrssTransfer(msg.sender, pending);
-                // cast to pair:
-                IUniswapV2Pair pair = IUniswapV2Pair(pool.lpToken);
-                // used to extrac balances
-                address token0 = pair.token0();
-                address token1 = pair.token1();
-                if (address(crss) != token0) {
-                    // Swap half earned to token0
-                    crssRouterAddress
-                        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                        pending.div(2),
-                        0,
-                        [address(crss), token0],
-                        address(this),
-                        now + routerDeadlineDuration
-                    );
-                }
-
-                if (address(crss) != token1) {
-                    // Swap half earned to token1
-                    crssRouterAddress
-                        .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                        pending.div(2),
-                        0,
-                        [address(crss), token1],
-                        address(this),
-                        now + routerDeadlineDuration
-                    );
-                }
-                payReferralCommission(msg.sender, pending);
-                
-                deposit(stakePoolId, pending, address(0), false);
+        require(pool.strategy == address(0), "external pool");
+        updatePool(_pid);
+        address[] memory users = autoAddressByPid[_pid].getAllAddresses();
+        uint256 totalPending;
+        for(uint256 i = 0; i < users.length ; i++) {
+            UserInfo storage user = userInfo[_pid][users[i]];
+            uint256 amount = getUserDepositBalanceByPid(_pid, users[i]);
+            uint256 pending = amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
+            if(user.isVest) {
+                uint256 crssReward = pending.div(2);
+                uint256 xCrssReward = pending.div(2);
+                totalPending = totalPending.add(crssReward);
+                crss.approve(address(xCrss), xCrssReward);
+                xCrss.depositToken(users[i], xCrssReward);
             }
-            user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+            else {
+                uint256 crssReward = pending.mul(75).div(100);
+                uint256 burnReward = pending.div(25).div(100);
+                totalPending = totalPending.add(crssReward);
+                safeCrssTransfer(burnAddress, burnReward);
+            }
+            payReferralCommission(users[i], pending);
+            user.crssRewardLockedUp = 0;
+            user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
+        }
+
+        if (totalPending > 0) {
+
+            ICrosswisePair pair = ICrosswisePair(address(pool.lpToken));
+            // used to extrac balances
+            address token0 = pair.token0();
+            address token1 = pair.token1();
+            if (address(crss) != token0) {
+                // Swap half earned to token0
+                address[] memory addrPair = new address[](2);
+                addrPair[0] = address(crss);
+                addrPair[1] = token0;
+                crssRouterAddress
+                    .swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    totalPending.div(2),
+                    0,
+                    addrPair,
+                    address(this),
+                    now + routerDeadlineDuration
+                );
+            }
+
+            if (address(crss) != token1) {
+                // Swap half earned to token1
+                address[] memory addrPair = new address[](2);
+                addrPair[0] = address(crss);
+                addrPair[1] = token1;
+                crssRouterAddress
+                    .swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                    totalPending.div(2),
+                    0,
+                    addrPair,
+                    address(this),
+                    now + routerDeadlineDuration
+                );
+            }
+            
+            // Get want tokens, ie. add liquidity
+            uint256 token0Amt = IBEP20(token0).balanceOf(address(this));
+            uint256 token1Amt = IBEP20(token1).balanceOf(address(this));
+            if (token0Amt > 0 && token1Amt > 0) {
+                IBEP20(token0).safeIncreaseAllowance(
+                    address(crssRouterAddress),
+                    token0Amt
+                );
+                IBEP20(token1).safeIncreaseAllowance(
+                    address(crssRouterAddress),
+                    token1Amt
+                );
+                crssRouterAddress.addLiquidity(
+                    token0,
+                    token1,
+                    token0Amt,
+                    token1Amt,
+                    0,
+                    0,
+                    address(this),
+                    now + routerDeadlineDuration
+                );
+            }
         }
     }
 
     // Deposit LP tokens to MasterChef for CRSS allocation.
-    function deposit(uint256 _pid, uint256 _amount, address _referrer, bool immediateClaim, bool isAuto) public nonReentrant {
+    function deposit(uint256 _pid, uint256 _amount, address _referrer, bool isVest, bool isAuto) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         if(user.amount > 0) {
             require(user.isAuto == isAuto, "Cannot change auto compound in progress");
+            require(user.isVest == isVest, "Cannot change vesting option in progress");
         }
         updatePool(_pid);
         if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != msg.sender) {
             crssReferral.recordReferral(msg.sender, _referrer);
         }
-        payOrLockuppendingCrss(_pid, immediateClaim);
+        payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
             uint256 oldBalance = pool.lpToken.balanceOf(address(this));
             pool.lpToken.transferFrom(address(msg.sender), address(this), _amount);
@@ -329,9 +406,26 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 pool.lpToken.safeIncreaseAllowance(pool.strategy, _amount);
                 _amount = IStrategy(pool.strategy).deposit(msg.sender, _amount);
             }
+            else if(isAuto) {
+                uint256 share = _amount;
+                uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+                if(lpSupply > 0) {
+                    share = _amount.mul(totalShares[_pid]).div(lpSupply);
+                    if(share == 0 && totalShares[_pid] == 0) {
+                        share = _amount.div(lpSupply);
+                    }
+                }
+                totalShares[_pid] = totalShares[_pid].add(share);
+                _amount = share;
+            }
             user.amount = user.amount.add(_amount);
+            user.isAuto = isAuto;
+            user.isVest = isVest;
+            autoUserIndex(_pid, msg.sender);
         }
-        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+
+        uint256 amount = getUserDepositBalanceByPid(_pid, msg.sender);
+        user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -339,19 +433,44 @@ contract MasterChef is Ownable, ReentrancyGuard {
     function withdraw(uint256 _pid, uint256 _amount) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require(user.amount >= _amount, "withdraw: not good");
+        
+        uint256 lockedAmount;
+        if(pool.strategy != address(0)) {
+            uint256 LockedTotal = IStrategy(pool.strategy).wantLockedTotal();
+            uint256 sharesTotal = IStrategy(pool.strategy).sharesTotal();
+            lockedAmount = user.amount.mul(LockedTotal).div(sharesTotal);
+        }
+        else if(user.isAuto) {
+            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+            lockedAmount = user.amount.mul(lpSupply).div(totalShares[_pid]);
+        }
+        else {
+            lockedAmount = user.amount;
+        }
+        require(lockedAmount >= _amount, "withdraw: not good");
+
         updatePool(_pid);
-        payOrLockuppendingCrss(_pid, false);
+        payOrLockuppendingCrss(_pid);
 
         if (_amount > 0) {
+            uint256 shareRemoved;
             if(pool.strategy != address(0)) { 
-                _amount = IStrategy(pool.strategy).withdraw(msg.sender, _amount);
+                shareRemoved = IStrategy(pool.strategy).withdraw(msg.sender, _amount);
             }
-            user.amount = user.amount.sub(_amount);
+            else if(user.isAuto) {
+                uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+                shareRemoved = _amount.mul(totalShares[_pid]).div(lpSupply);
+                totalShares[_pid] = totalShares[_pid].sub(shareRemoved);
+            }
+            else{
+                shareRemoved = _amount;
+            }
+            user.amount = user.amount.sub(shareRemoved);
+            autoUserIndex(_pid, msg.sender);
             pool.lpToken.transfer(address(msg.sender), _amount);
         }
-
-        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+        uint256 amount = getUserDepositBalanceByPid(_pid, msg.sender);
+        user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
@@ -359,39 +478,45 @@ contract MasterChef is Ownable, ReentrancyGuard {
     function emergencyWithdraw(uint256 _pid) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        uint256 amount = user.amount;
+        uint256 amount;
+        if(pool.strategy != address(0)) { 
+            uint256 LockedTotal = IStrategy(pool.strategy).wantLockedTotal();
+            uint256 sharesTotal = IStrategy(pool.strategy).sharesTotal();
+            amount = user.amount.mul(LockedTotal).div(sharesTotal);
+            IStrategy(pool.strategy).withdraw(msg.sender, amount);
+        }
+        else if(user.isAuto) {
+            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+            amount = user.amount.mul(lpSupply).div(totalShares[_pid]);
+            totalShares[_pid] = totalShares[_pid].sub(user.amount);
+        }
+        else{
+            amount = user.amount;
+        }
         user.amount = 0;
         user.rewardDebt = 0;
         user.crssRewardLockedUp = 0;
-        if(pool.strategy != address(0)) { 
-            amount = IStrategy(pool.strategy).withdraw(msg.sender, amount);
-        }
+        autoUserIndex(_pid, msg.sender);
         pool.lpToken.transfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
     // Pay or lockup pending CRSSs.
-    function payOrLockuppendingCrss(uint256 _pid, bool _immediateClaim) internal {
+    function payOrLockuppendingCrss(uint256 _pid) internal {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         if(user.amount > 0)
         {
-            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
+            uint256 amount = getUserDepositBalanceByPid(_pid, msg.sender);
+            uint256 pending = amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
             if (pending > 0) {
                 if(user.isAuto) {
                     user.crssRewardLockedUp = pending;
                     return;
                 }
                 // send rewards
-                if(_immediateClaim) {
-                    uint256 crssReward = pending.mul(75).div(100);
-                    uint256 burnReward = pending.div(25).div(100);
-
-                    safeCrssTransfer(msg.sender, crssReward);
-                    safeCrssTransfer(burnAddress, burnReward);
-                }
-                else {
+                if(user.isVest) {
                     uint256 crssReward = pending.div(2);
                     uint256 xCrssReward = pending.div(2);
 
@@ -399,7 +524,14 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
                     crss.approve(address(xCrss), xCrssReward);
                     xCrss.depositToken(msg.sender, xCrssReward);
-                }   
+                }
+                else {
+                    uint256 crssReward = pending.mul(75).div(100);
+                    uint256 burnReward = pending.div(25).div(100);
+
+                    safeCrssTransfer(msg.sender, crssReward);
+                    safeCrssTransfer(burnAddress, burnReward);
+                }
                 payReferralCommission(msg.sender, pending);
             }
         }
@@ -456,6 +588,20 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 crss.mint(referrer, commissionAmount);
                 crssReferral.recordReferralCommission(referrer, commissionAmount);
                 emit ReferralCommissionPaid(_user, referrer, commissionAmount);
+            }
+        }
+    }
+
+    function autoUserIndex( uint256 _pid, address _user ) internal {
+        AddrArrayLib.Addresses storage addr = autoAddressByPid[_pid];
+
+        uint256 amount = userInfo[_pid][_user].amount;
+        bool isAuto = userInfo[_pid][_user].isAuto;
+        if(isAuto) {
+            if( amount > 0 ){ // add user
+                addr.pushAddress(_user);
+            }else if( amount == 0 ){ // remove user
+                addr.removeAddress(_user);
             }
         }
     }
