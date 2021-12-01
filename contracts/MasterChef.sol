@@ -5,12 +5,13 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+import "./BaseRelayRecipient.sol";
+
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
 import "./libs/ICrssReferral.sol";
 import "./libs/Ownable.sol";
 import './libs/AddrArrayLib.sol';
-import './libs/BasicMetaTransaction.sol';
 import "./interface/IStrategy.sol";
 import "./interface/ICrosswisePair.sol";
 import "./interface/ICrosswiseRouter02.sol";
@@ -25,7 +26,7 @@ import "./xCrssToken.sol";
 // distributed and the community can show to govern itself.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
-contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
+contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
     using AddrArrayLib for AddrArrayLib.Addresses;
@@ -381,19 +382,19 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
     // Deposit LP tokens to MasterChef for CRSS allocation.
     function deposit(uint256 _pid, uint256 _amount, address _referrer, bool isVest, bool isAuto) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msgSender()];
+        UserInfo storage user = userInfo[_pid][_msgSender()];
         if(user.amount > 0) {
             require(user.isAuto == isAuto, "Cannot change auto compound in progress");
             require(user.isVest == isVest, "Cannot change vesting option in progress");
         }
         updatePool(_pid);
-        if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != msgSender()) {
-            crssReferral.recordReferral(msgSender(), _referrer);
+        if (_amount > 0 && address(crssReferral) != address(0) && _referrer != address(0) && _referrer != _msgSender()) {
+            crssReferral.recordReferral(_msgSender(), _referrer);
         }
         payOrLockuppendingCrss(_pid);
         if (_amount > 0) {
             uint256 oldBalance = pool.lpToken.balanceOf(address(this));
-            pool.lpToken.transferFrom(address(msgSender()), address(this), _amount);
+            pool.lpToken.transferFrom(address(_msgSender()), address(this), _amount);
             uint256 newBalance = pool.lpToken.balanceOf(address(this));
             _amount = newBalance.sub(oldBalance);
             if (pool.depositFeeBP > 0) {
@@ -404,7 +405,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
             }
             if(pool.strategy != address(0)) {
                 pool.lpToken.safeIncreaseAllowance(pool.strategy, _amount);
-                _amount = IStrategy(pool.strategy).deposit(msgSender(), _amount);
+                _amount = IStrategy(pool.strategy).deposit(_msgSender(), _amount);
             }
             else if(isAuto) {
                 uint256 share = _amount;
@@ -421,18 +422,18 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
             user.amount = user.amount.add(_amount);
             user.isAuto = isAuto;
             user.isVest = isVest;
-            autoUserIndex(_pid, msgSender());
+            autoUserIndex(_pid, _msgSender());
         }
 
-        uint256 amount = getUserDepositBalanceByPid(_pid, msgSender());
+        uint256 amount = getUserDepositBalanceByPid(_pid, _msgSender());
         user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
-        emit Deposit(msgSender(), _pid, _amount);
+        emit Deposit(_msgSender(), _pid, _amount);
     }
 
     // Withdraw LP tokens from MasterChef.
     function withdraw(uint256 _pid, uint256 _amount) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msgSender()];
+        UserInfo storage user = userInfo[_pid][_msgSender()];
         
         uint256 lockedAmount;
         if(pool.strategy != address(0)) {
@@ -455,7 +456,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
         if (_amount > 0) {
             uint256 shareRemoved;
             if(pool.strategy != address(0)) { 
-                shareRemoved = IStrategy(pool.strategy).withdraw(msgSender(), _amount);
+                shareRemoved = IStrategy(pool.strategy).withdraw(_msgSender(), _amount);
             }
             else if(user.isAuto) {
                 uint256 lpSupply = pool.lpToken.balanceOf(address(this));
@@ -466,24 +467,24 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
                 shareRemoved = _amount;
             }
             user.amount = user.amount.sub(shareRemoved);
-            autoUserIndex(_pid, msgSender());
-            pool.lpToken.transfer(address(msgSender()), _amount);
+            autoUserIndex(_pid, _msgSender());
+            pool.lpToken.transfer(address(_msgSender()), _amount);
         }
-        uint256 amount = getUserDepositBalanceByPid(_pid, msgSender());
+        uint256 amount = getUserDepositBalanceByPid(_pid, _msgSender());
         user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
-        emit Withdraw(msgSender(), _pid, _amount);
+        emit Withdraw(_msgSender(), _pid, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint256 _pid) public nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msgSender()];
+        UserInfo storage user = userInfo[_pid][_msgSender()];
         uint256 amount;
         if(pool.strategy != address(0)) { 
             uint256 LockedTotal = IStrategy(pool.strategy).wantLockedTotal();
             uint256 sharesTotal = IStrategy(pool.strategy).sharesTotal();
             amount = user.amount.mul(LockedTotal).div(sharesTotal);
-            IStrategy(pool.strategy).withdraw(msgSender(), amount);
+            IStrategy(pool.strategy).withdraw(_msgSender(), amount);
         }
         else if(user.isAuto) {
             uint256 lpSupply = pool.lpToken.balanceOf(address(this));
@@ -496,19 +497,19 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
         user.amount = 0;
         user.rewardDebt = 0;
         user.crssRewardLockedUp = 0;
-        autoUserIndex(_pid, msgSender());
-        pool.lpToken.transfer(address(msgSender()), amount);
-        emit EmergencyWithdraw(msgSender(), _pid, amount);
+        autoUserIndex(_pid, _msgSender());
+        pool.lpToken.transfer(address(_msgSender()), amount);
+        emit EmergencyWithdraw(_msgSender(), _pid, amount);
     }
 
     // Pay or lockup pending CRSSs.
     function payOrLockuppendingCrss(uint256 _pid) internal {
         PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][msgSender()];
+        UserInfo storage user = userInfo[_pid][_msgSender()];
 
         if(user.amount > 0)
         {
-            uint256 amount = getUserDepositBalanceByPid(_pid, msgSender());
+            uint256 amount = getUserDepositBalanceByPid(_pid, _msgSender());
             uint256 pending = amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
             if (pending > 0) {
                 if(user.isAuto) {
@@ -520,19 +521,19 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
                     uint256 crssReward = pending.div(2);
                     uint256 xCrssReward = pending.div(2);
 
-                    safeCrssTransfer(msgSender(), crssReward);
+                    safeCrssTransfer(_msgSender(), crssReward);
 
                     crss.approve(address(xCrss), xCrssReward);
-                    xCrss.depositToken(msgSender(), xCrssReward);
+                    xCrss.depositToken(_msgSender(), xCrssReward);
                 }
                 else {
                     uint256 crssReward = pending.mul(75).div(100);
                     uint256 burnReward = pending.div(25).div(100);
 
-                    safeCrssTransfer(msgSender(), crssReward);
+                    safeCrssTransfer(_msgSender(), crssReward);
                     safeCrssTransfer(burnAddress, burnReward);
                 }
-                payReferralCommission(msgSender(), pending);
+                payReferralCommission(_msgSender(), pending);
             }
         }
     }
@@ -549,13 +550,13 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
 
     // Update dev address by the previous dev.
     function setDevAddress(address _devAddress) public {
-        require(msgSender() == devAddress, "setDevAddress: FORBIDDEN");
+        require(_msgSender() == devAddress, "setDevAddress: FORBIDDEN");
         require(_devAddress != address(0), "setDevAddress: ZERO");
         devAddress = _devAddress;
     }
 
     function setTreasuryAddress(address _treasuryAddress) public {
-        require(msgSender() == treasuryAddress, "setTreasuryAddress: FORBIDDEN");
+        require(_msgSender() == treasuryAddress, "setTreasuryAddress: FORBIDDEN");
         require(_treasuryAddress != address(0), "setTreasuryAddress: ZERO");
         treasuryAddress = _treasuryAddress;
     }
@@ -563,7 +564,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BasicMetaTransaction {
     // Crosswise has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
     function updateEmissionRate(uint256 _crssPerBlock) public onlyOwner {
         massUpdatePools();
-        emit EmissionRateUpdated(msgSender(), crssPerBlock, _crssPerBlock);
+        emit EmissionRateUpdated(_msgSender(), crssPerBlock, _crssPerBlock);
         crssPerBlock = _crssPerBlock;
     }
 
