@@ -91,6 +91,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     mapping(uint256 => AddrArrayLib.Addresses) private autoAddressByPid;
 
     mapping(uint256 => uint256) public totalShares;
+    mapping(uint256 => uint256) public totalLocked;
     
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
@@ -144,8 +145,12 @@ contract MasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         if(pool.strategy == address(0) && user.isAuto) {
-            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-            return user.amount.mul(lpSupply).div(totalShares[_pid]);
+            if( totalShares[_pid] == 0) 
+                return 0;
+            else {
+                // uint256 lpSupply = pool.lpToken.balanceOf(address(this));
+                return user.amount.mul(totalLocked[_pid]).div(totalShares[_pid]);
+            }
         }
         else {
             return user.amount;
@@ -165,8 +170,11 @@ contract MasterChef is Ownable, ReentrancyGuard {
             return user.amount.mul(LockedTotal).div(sharesTotal);
         }
         else if(user.isAuto) {
-            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-            return user.amount.mul(lpSupply).div(totalShares[_pid]);
+            if(totalShares[_pid] != 0){
+                return user.amount.mul(totalLocked[_pid]).div(totalShares[_pid]);
+            } else {
+                return 0;
+            }
         }
         else {
             return user.amount;
@@ -318,6 +326,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
         if (totalPending > 0) {
 
+            crss.approve(address(crssRouterAddress), totalPending);
+            
             ICrosswisePair pair = ICrosswisePair(address(pool.lpToken));
             // used to extrac balances
             address token0 = pair.token0();
@@ -364,6 +374,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
                     address(crssRouterAddress),
                     token1Amt
                 );
+                uint256 oldBalance = pool.lpToken.balanceOf(address(this));
                 crssRouterAddress.addLiquidity(
                     token0,
                     token1,
@@ -374,6 +385,14 @@ contract MasterChef is Ownable, ReentrancyGuard {
                     address(this),
                     now + routerDeadlineDuration
                 );
+                uint256 newBalance = pool.lpToken.balanceOf(address(this));
+                totalLocked[_pid] = totalLocked[_pid].add(newBalance.sub(oldBalance));
+            }
+
+            for(uint256 i = 0; i < users.length ; i++) {
+                UserInfo storage user = userInfo[_pid][users[i]];
+                uint256 amount = getUserDepositBalanceByPid(_pid, users[i]);
+                user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
             }
         }
     }
@@ -408,14 +427,14 @@ contract MasterChef is Ownable, ReentrancyGuard {
             }
             else if(isAuto) {
                 uint256 share = _amount;
-                uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-                if(lpSupply > 0) {
-                    share = _amount.mul(totalShares[_pid]).div(lpSupply);
+                if(totalLocked[_pid] > 0) {
+                    share = _amount.mul(totalShares[_pid]).div(totalLocked[_pid]);
                     if(share == 0 && totalShares[_pid] == 0) {
-                        share = _amount.div(lpSupply);
+                        share = _amount.div(totalLocked[_pid]);
                     }
                 }
                 totalShares[_pid] = totalShares[_pid].add(share);
+                totalLocked[_pid] = totalLocked[_pid].add(_amount);
                 _amount = share;
             }
             user.amount = user.amount.add(_amount);
@@ -441,8 +460,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             lockedAmount = user.amount.mul(LockedTotal).div(sharesTotal);
         }
         else if(user.isAuto) {
-            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-            lockedAmount = user.amount.mul(lpSupply).div(totalShares[_pid]);
+            lockedAmount = user.amount.mul(totalLocked[_pid]).div(totalShares[_pid]);
         }
         else {
             lockedAmount = user.amount;
@@ -458,9 +476,9 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 shareRemoved = IStrategy(pool.strategy).withdraw(msg.sender, _amount);
             }
             else if(user.isAuto) {
-                uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-                shareRemoved = _amount.mul(totalShares[_pid]).div(lpSupply);
+                shareRemoved = _amount.mul(totalShares[_pid]).div(totalLocked[_pid]);
                 totalShares[_pid] = totalShares[_pid].sub(shareRemoved);
+                totalLocked[_pid] = totalLocked[_pid].sub(_amount);
             }
             else{
                 shareRemoved = _amount;
@@ -486,9 +504,9 @@ contract MasterChef is Ownable, ReentrancyGuard {
             IStrategy(pool.strategy).withdraw(msg.sender, amount);
         }
         else if(user.isAuto) {
-            uint256 lpSupply = pool.lpToken.balanceOf(address(this));
-            amount = user.amount.mul(lpSupply).div(totalShares[_pid]);
+            amount = user.amount.mul(totalLocked[_pid]).div(totalShares[_pid]);
             totalShares[_pid] = totalShares[_pid].sub(user.amount);
+            totalLocked[_pid] = totalLocked[_pid].sub(amount);
         }
         else{
             amount = user.amount;
