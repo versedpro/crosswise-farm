@@ -1,7 +1,7 @@
 // SPDX-License-Identifier:MIT
 pragma solidity ^0.6.2;
 
-import "./interfaces/IRelayRecipient.sol";
+import "./interface/IRelayRecipient.sol";
 
 /**
  * A base contract to be inherited by any contract that want to receive relayed transactions

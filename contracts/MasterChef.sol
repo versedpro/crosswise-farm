@@ -10,7 +10,6 @@ import "./BaseRelayRecipient.sol";
 import "./libs/IBEP20.sol";
 import "./libs/SafeBEP20.sol";
 import "./libs/ICrssReferral.sol";
-import "./libs/Ownable.sol";
 import './libs/AddrArrayLib.sol';
 import "./interface/IStrategy.sol";
 import "./interface/ICrosswisePair.sol";
@@ -26,7 +25,7 @@ import "./xCrssToken.sol";
 // distributed and the community can show to govern itself.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
-contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
+contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
     using AddrArrayLib for AddrArrayLib.Addresses;
@@ -67,6 +66,8 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
     xCrssToken public xCrss;
     // Crss router addressList
     ICrosswiseRouter02 public crssRouterAddress;
+    // Owner address;
+    address private _owner;
     // Dev address.
     address public devAddress;
     // Deposit Fee address
@@ -93,6 +94,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
 
     mapping(uint256 => uint256) public totalShares;
     mapping(uint256 => uint256) public totalLocked;
+    mapping(uint256 => uint256) public leftCrss;
     
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
@@ -112,6 +114,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
     event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
     event CrssPerBlockUpdated(uint256 crssPerBlock);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     constructor(
         CrssToken _crss,
@@ -127,15 +130,40 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
         require(_devAddress != address(0), "constructor: dev address is zero address");
         require(_treasuryAddress != address(0), "constructor: treasury address is zero address");
         
-
+        _owner = _msgSender();
         crss = _crss;
         xCrss = _xCrss;
         crssRouterAddress = _crssRouterAddress;
         startBlock = _startBlock;
         crssPerBlock = 1.2 * 10 ** 18;
-
         devAddress = _devAddress;
         treasuryAddress = _treasuryAddress;
+
+        emit OwnershipTransferred(address(0), _owner);
+    }
+    
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    modifier onlyOwner() {
+        require(owner() == _msgSender(), "caller is not the owner");
+        _;
+    }
+
+    function renounceOwnership() public onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    function transferOwnership(address newOwner) public onlyOwner {
+        require(newOwner != address(0), "new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+
+    function versionRecipient() external view override returns (string memory) {
+        return "1";
     }
 
     function poolLength() external view returns (uint256) {
@@ -302,7 +330,8 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
         require(pool.strategy == address(0), "external pool");
         updatePool(_pid);
         address[] memory users = autoAddressByPid[_pid].getAllAddresses();
-        uint256 totalPending;
+        uint256 totalPending = leftCrss[_pid];
+        uint256 crssOldBalance = crss.balanceOf(address(this));
         for(uint256 i = 0; i < users.length ; i++) {
             UserInfo storage user = userInfo[_pid][users[i]];
             uint256 amount = getUserDepositBalanceByPid(_pid, users[i]);
@@ -333,6 +362,8 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
             // used to extrac balances
             address token0 = pair.token0();
             address token1 = pair.token1();
+            uint256 token0Amt = totalPending.div(2);
+            uint256 token1Amt = totalPending.div(2);
             if (address(crss) != token0) {
                 // Swap half earned to token0
                 address[] memory addrPair = new address[](2);
@@ -346,6 +377,7 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
                     address(this),
                     now + routerDeadlineDuration
                 );
+                token0Amt = IBEP20(token0).balanceOf(address(this));
             }
 
             if (address(crss) != token1) {
@@ -361,11 +393,10 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
                     address(this),
                     now + routerDeadlineDuration
                 );
+                token1Amt = IBEP20(token1).balanceOf(address(this));
             }
             
             // Get want tokens, ie. add liquidity
-            uint256 token0Amt = IBEP20(token0).balanceOf(address(this));
-            uint256 token1Amt = IBEP20(token1).balanceOf(address(this));
             if (token0Amt > 0 && token1Amt > 0) {
                 IBEP20(token0).safeIncreaseAllowance(
                     address(crssRouterAddress),
@@ -388,6 +419,12 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
                 );
                 uint256 newBalance = pool.lpToken.balanceOf(address(this));
                 totalLocked[_pid] = totalLocked[_pid].add(newBalance.sub(oldBalance));
+                uint256 crssNewBalance = crss.balanceOf(address(this));
+                if(crssOldBalance.sub(crssNewBalance) < totalPending) {
+                    leftCrss[_pid] = totalPending.add(crssNewBalance).sub(crssOldBalance);
+                } else {
+                    leftCrss[_pid] = 0;
+                }
             }
 
             for(uint256 i = 0; i < users.length ; i++) {
@@ -484,13 +521,64 @@ contract MasterChef is Ownable, ReentrancyGuard, BaseRelayRecipient {
             else{
                 shareRemoved = _amount;
             }
-            user.amount = user.amount.sub(shareRemoved);
+            if(lockedAmount == _amount && user.isAuto) {
+                user.amount = 0;
+                leftCrss[_pid] = leftCrss[_pid].add(user.crssRewardLockedUp);
+                user.crssRewardLockedUp = 0;
+            }
+            else {
+                user.amount = user.amount.sub(shareRemoved);
+            }
             autoUserIndex(_pid, _msgSender());
             pool.lpToken.transfer(address(_msgSender()), _amount);
         }
         uint256 amount = getUserDepositBalanceByPid(_pid, _msgSender());
         user.rewardDebt = amount.mul(pool.accCrssPerShare).div(1e12);
         emit Withdraw(_msgSender(), _pid, _amount);
+    }
+
+    // Stake CAKE tokens to MasterChef
+    function enterStaking(uint256 _amount) public {
+        PoolInfo storage pool = poolInfo[0];
+        UserInfo storage user = userInfo[0][_msgSender()];
+        updatePool(0);
+        if (user.amount > 0) {
+            uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+            if(pending > 0) {
+                safeCrssTransfer(_msgSender(), pending);
+            }
+        }
+        if(_amount > 0) {
+            uint256 oldBalance = pool.lpToken.balanceOf(address(this));
+            pool.lpToken.transferFrom(address(_msgSender()), address(this), _amount);
+            uint256 newBalance = pool.lpToken.balanceOf(address(this));
+            _amount = newBalance.sub(oldBalance);
+            user.amount = user.amount.add(_amount);
+            user.isAuto = false;
+            user.isVest = false;
+        }
+        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+
+        emit Deposit(_msgSender(), 0, _amount);
+    }
+
+    // Withdraw CAKE tokens from STAKING.
+    function leaveStaking(uint256 _amount) public {
+        PoolInfo storage pool = poolInfo[0];
+        UserInfo storage user = userInfo[0][_msgSender()];
+        require(user.amount >= _amount, "withdraw: not good");
+        updatePool(0);
+        uint256 pending = user.amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt);
+        if(pending > 0) {
+            safeCrssTransfer(_msgSender(), pending);
+        }
+        if(_amount > 0) {
+            user.amount = user.amount.sub(_amount);
+            pool.lpToken.safeTransfer(_msgSender(), _amount);
+        }
+        user.rewardDebt = user.amount.mul(pool.accCrssPerShare).div(1e12);
+
+        emit Withdraw(_msgSender(), 0, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.

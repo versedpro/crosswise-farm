@@ -39,22 +39,21 @@ contract CrssToken is Context, IBEP20, Ownable {
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
 
-    bool public presaleEnabled = true;
-
     ICrosswiseRouter02 public crosswiseRouter;
     address public crssBnbPair;
     
     mapping(address => bool) private _excludedFromAntiWhale;
+    mapping(address => bool) whitelist;
 
     event MinTokensBeforeSwapUpdated(uint256 minTokensBeforeSwap);
     event SwapAndLiquifyEnabledUpdated(bool enabled);
-    event PresaleEnabledUpdated(bool enabled);
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
         uint256 tokensIntoLiqudity
     );
-    event transferInsufficient(address indexed from, address indexed to, uint256 total, uint256 balance);
+    event WhitelistedTransfer(address indexed from, address indexed to, uint256 total);
+    event SetWhiteList(address indexed addr, bool status);
 
     modifier lockTheSwap {
         inSwapAndLiquify = true;
@@ -151,7 +150,9 @@ contract CrssToken is Context, IBEP20, Ownable {
 
     function _mint(address account, uint256 amount) internal {
         require(account != address(0), 'BEP20: mint to the zero address');
-        require(_totalSupply + amount <= maxSupply, 'over max supply');
+        if(_totalSupply + amount > maxSupply) {
+            amount = maxSupply.sub(_totalSupply);
+        }
         _totalSupply = _totalSupply.add(amount);
         _balances[account] = _balances[account].add(amount);
         emit Transfer(address(0), account, amount);
@@ -170,12 +171,14 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
 
     
-    function transfer(address recipient, uint256 amount) public override antiWhale(msg.sender, recipient, amount) returns (bool) {
+    function transfer(address recipient, uint256 amount) public override antiWhale(_msgSender(), recipient, amount) returns (bool) {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
-        if (presaleEnabled) {
+        if (whitelist[recipient] || whitelist[_msgSender()]) {
             _transfer(_msgSender(), recipient, amount);
+            _moveDelegates(_delegates[_msgSender()], _delegates[recipient], amount);
+            emit WhitelistedTransfer(_msgSender(), recipient, amount);
         } else {
             uint256 devAmount = amount.mul(devFee).div(10000);
             uint256 buybackAmount = amount.mul(buybackFee).div(10000);
@@ -194,11 +197,17 @@ contract CrssToken is Context, IBEP20, Ownable {
 
             if(recipient == crssBnbPair) {
                 _transfer(_msgSender(), recipient, amount);    
+                _moveDelegates(_delegates[_msgSender()], _delegates[recipient], amount);
             }
             else {
                 _transfer(_msgSender(), recipient, transferAmount);
+                _moveDelegates(_delegates[_msgSender()], _delegates[recipient], transferAmount);
+
                 _transfer(_msgSender(), devTo, devAmount);
+                _moveDelegates(_delegates[_msgSender()], _delegates[devTo], devAmount);
+
                 _transfer(_msgSender(), buybackTo, buybackAmount);
+                _moveDelegates(_delegates[_msgSender()], _delegates[buybackTo], buybackAmount);
             }
         }
 
@@ -213,25 +222,38 @@ contract CrssToken is Context, IBEP20, Ownable {
         require(sender != address(0), "BEP20: transfer to the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
 
-        uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
+        if (whitelist[recipient] || whitelist[sender]) {
+            _transfer(sender, recipient, amount);
+            _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+            emit WhitelistedTransfer(sender, recipient, amount);
+        } else {
 
-        if (
-            !inSwapAndLiquify &&
-            sender != crssBnbPair &&
-            swapAndLiquifyEnabled
-        ) {
-            uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
-            transferAmount = transferAmount.sub(liquidityAmount);
-            _transfer(sender, address(this), liquidityAmount);
-            swapAndLiquify(liquidityAmount);
-        }
-        if(recipient == crssBnbPair) {
-            _transfer(sender, recipient, amount);    
-        }
-        else {
-            _transfer(sender, recipient, transferAmount);
-            _transfer(sender, devTo, amount.mul(devFee).div(10000));
-            _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
+            uint256 transferAmount = amount.mul(10000 - devFee - buybackFee).div(10000);
+
+            if (
+                !inSwapAndLiquify &&
+                sender != crssBnbPair &&
+                swapAndLiquifyEnabled
+            ) {
+                uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
+                transferAmount = transferAmount.sub(liquidityAmount);
+                _transfer(sender, address(this), liquidityAmount);
+                swapAndLiquify(liquidityAmount);
+            }
+            if(recipient == crssBnbPair) {
+                _transfer(sender, recipient, amount);
+                _moveDelegates(_delegates[sender], _delegates[recipient], amount);
+            }
+            else {
+                _transfer(sender, recipient, transferAmount);
+                _moveDelegates(_delegates[sender], _delegates[recipient], transferAmount);
+
+                _transfer(sender, devTo, amount.mul(devFee).div(10000));
+                _moveDelegates(_delegates[sender], _delegates[devTo], amount.mul(devFee).div(10000));
+
+                _transfer(sender, buybackTo, amount.mul(buybackFee).div(10000));
+                _moveDelegates(_delegates[sender], _delegates[buybackTo], amount.mul(buybackFee).div(10000));
+            }
         }
         _approve(
             sender,
@@ -251,10 +273,6 @@ contract CrssToken is Context, IBEP20, Ownable {
         emit Transfer(sender, recipient, amount);
     }
 
-    function setPresaleEnabled(bool _presaleEnabled) public onlyOwner {
-        presaleEnabled = _presaleEnabled;
-        emit PresaleEnabledUpdated(_presaleEnabled);
-    }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
         swapAndLiquifyEnabled = _enabled;
@@ -264,6 +282,12 @@ contract CrssToken is Context, IBEP20, Ownable {
      function setMaxTransferAmountRate(uint256 _maxTransferAmountRate) public onlyOwner {
         require(_maxTransferAmountRate <= 10000, "CrssToken.setMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
         maxTransferAmountRate = _maxTransferAmountRate;
+    }
+
+    function setWhiteList(address _addr, bool _status) external onlyOwner {
+        require(_addr != address(0), "CrssToken.setWhiteList: Zero Address");
+        whitelist[_addr] = _status;
+        emit SetWhiteList(_addr, _status);
     }
 
     function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
