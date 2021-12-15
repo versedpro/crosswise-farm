@@ -192,7 +192,7 @@ contract CrssToken is Context, IBEP20, Ownable {
                 uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
                 transferAmount = transferAmount.sub(liquidityAmount);
                 _transfer(_msgSender(), address(this), liquidityAmount);
-                swapAndLiquify(liquidityAmount);
+                swapAndLiquify();
             }
 
             if(recipient == crssBnbPair) {
@@ -238,7 +238,7 @@ contract CrssToken is Context, IBEP20, Ownable {
                 uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
                 transferAmount = transferAmount.sub(liquidityAmount);
                 _transfer(sender, address(this), liquidityAmount);
-                swapAndLiquify(liquidityAmount);
+                swapAndLiquify();
             }
             if(recipient == crssBnbPair) {
                 _transfer(sender, recipient, amount);
@@ -290,7 +290,8 @@ contract CrssToken is Context, IBEP20, Ownable {
         emit SetWhiteList(_addr, _status);
     }
 
-    function swapAndLiquify(uint256 contractTokenBalance) private lockTheSwap {
+    function swapAndLiquify() private lockTheSwap {
+        uint256 contractTokenBalance = balanceOf(address(this));
         // split the contract balance into halves
         uint256 maxTransferAmount = maxTransferAmount();
         contractTokenBalance = contractTokenBalance > maxTransferAmount ? maxTransferAmount : contractTokenBalance;
