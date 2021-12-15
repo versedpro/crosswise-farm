@@ -688,7 +688,7 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
             }
         }
     }
-
+    
     function autoUserIndex( uint256 _pid, address _user ) internal {
         AddrArrayLib.Addresses storage addr = autoAddressByPid[_pid];
 
