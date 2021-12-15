@@ -40,16 +40,19 @@ contract xCrssToken is BEP20UpgradeSafe {
     uint256 public constant unlockPerMonth = 20;
 
     address public masterChef;
+    address public stakingVault;
 
     function initialize(
         IBEP20 _crssToken,
-        address _masterChef
+        address _masterChef,
+        address _stakingVault
     ) public initializer {
         require(address(_crssToken) != address(0), "xCrssToken: Token contract address should not be zero address");
         require(_masterChef != address(0), "xCrssToken: MasterChef contract address should not be zero address");
         
         crssToken = _crssToken;
         masterChef = _masterChef;
+        stakingVault = _stakingVault;
 
         __BEP20_init("Locked Crosswise Token", "xCRSS");
     }
@@ -107,7 +110,7 @@ contract xCrssToken is BEP20UpgradeSafe {
     }
 
     function depositToken(address _depositUser, uint256 _rewardAmount) public {
-        require(msg.sender == masterChef, "xCrssToken.deposit: Sender must be masterChef contract");
+        require(msg.sender == masterChef || msg.sender == stakingVault, "xCrssToken.deposit: Sender must be masterChef or stakingVault contract");
 
         require(_depositUser != address(0), "xCrssToken.deposit: Deposit user address should not be zero address");
 
