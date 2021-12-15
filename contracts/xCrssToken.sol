@@ -49,6 +49,7 @@ contract xCrssToken is BEP20UpgradeSafe {
     ) public initializer {
         require(address(_crssToken) != address(0), "xCrssToken: Token contract address should not be zero address");
         require(_masterChef != address(0), "xCrssToken: MasterChef contract address should not be zero address");
+        require(_stakingVault != address(0), "xCrssToken: StakingVault contract address should not be zero address");
         
         crssToken = _crssToken;
         masterChef = _masterChef;
