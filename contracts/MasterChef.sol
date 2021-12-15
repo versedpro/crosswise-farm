@@ -276,22 +276,12 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         return amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
     }
     
-    // // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
-    // function massHarvest(uint256[] memory pools, bool isVest) public {
-    //     uint256 poolLength = pools.length;
-    //     address nulladdress = address(0);
-    //     for (uint256 i = 0; i < poolLength; i++) {
-    //         deposit(pools[i], 0, nulladdress, isVest);
-    //     }
-    // }
-
-    // // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
-    // function massEarn(uint256[] memory pools) public {
-    //     uint256 poolLength = pools.length;
-    //     for (uint256 i = 0; i < poolLength; i++) {
-    //         earn(pools[i]);
-    //     }
-    // }
+    // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
+    function massHarvest(uint256[] memory pools) public {
+        for (uint256 i = 0; i < pools.length; i++) {
+            withdraw(pools[i], 0);
+        }
+    }
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
