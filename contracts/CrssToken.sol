@@ -5,13 +5,15 @@ pragma solidity 0.6.12;
 import "./libs/Context.sol";
 import "./libs/IBEP20.sol";
 import "./libs/Ownable.sol";
+import "./libs/Initializable.sol";
 import './interface/ICrosswiseRouter02.sol';
 import './interface/ICrosswiseFactory.sol';
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 // CrssToken with Governance.
-contract CrssToken is Context, IBEP20, Ownable {
+contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
     using SafeMath for uint256;
     using Address for address;
@@ -26,7 +28,7 @@ contract CrssToken is Context, IBEP20, Ownable {
     string private _symbol;
     uint8 private _decimals;
 
-    uint256 public maxSupply = 50000000000000000000000000;
+    uint256 public constant maxSupply = 50000000000000000000000000;
     uint256 public devFee;
     uint256 public liquidityFee;
     uint256 public buybackFee;
@@ -50,10 +52,12 @@ contract CrssToken is Context, IBEP20, Ownable {
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
-        uint256 tokensIntoLiqudity
+        uint256 tokensintoLiquidity
     );
     event WhitelistedTransfer(address indexed from, address indexed to, uint256 total);
     event SetWhiteList(address indexed addr, bool status);
+    event Init_router(address indexed router);
+    event SetMaxTransferAmountRate(uint256 maxTransferAmountRate);
 
     modifier lockTheSwap {
         inSwapAndLiquify = true;
@@ -100,7 +104,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         _excludedFromAntiWhale[address(this)] = true;
     }
     
-    function init_router(address router) public onlyOwner {
+    function init_router(address router) public onlyOwner initializer {
         ICrosswiseRouter02 _crosswiseRouter = ICrosswiseRouter02(router);
         // Create a uniswap pair for this new token
         crssBnbPair = ICrosswiseFactory(_crosswiseRouter.factory())
@@ -108,6 +112,7 @@ contract CrssToken is Context, IBEP20, Ownable {
 
         // set the rest of the contract variables
         crosswiseRouter = _crosswiseRouter;
+        emit Init_router(router);
     }
     
     function getOwner() external view returns (address) {
@@ -171,7 +176,7 @@ contract CrssToken is Context, IBEP20, Ownable {
     }
 
     
-    function transfer(address recipient, uint256 amount) public override antiWhale(_msgSender(), recipient, amount) returns (bool) {
+    function transfer(address recipient, uint256 amount) public override antiWhale(_msgSender(), recipient, amount) nonReentrant returns (bool) {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
@@ -218,7 +223,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         address sender,
         address recipient,
         uint256 amount
-    ) public override antiWhale(sender, recipient, amount) returns (bool) {
+    ) public override antiWhale(sender, recipient, amount) nonReentrant returns (bool) {
         require(sender != address(0), "BEP20: transfer to the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
 
@@ -282,6 +287,7 @@ contract CrssToken is Context, IBEP20, Ownable {
      function setMaxTransferAmountRate(uint256 _maxTransferAmountRate) public onlyOwner {
         require(_maxTransferAmountRate <= 10000, "CrssToken.setMaxTransferAmountRate: Max transfer amount rate must not exceed the maximum rate.");
         maxTransferAmountRate = _maxTransferAmountRate;
+        emit SetMaxTransferAmountRate(_maxTransferAmountRate);
     }
 
     function setWhiteList(address _addr, bool _status) external onlyOwner {
@@ -306,7 +312,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         uint256 initialBalance = address(this).balance;
 
         // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+        swapTokensForBNB(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
 
         // how much ETH did we just swap into?
         uint256 newBalance = address(this).balance.sub(initialBalance);
@@ -317,7 +323,7 @@ contract CrssToken is Context, IBEP20, Ownable {
         emit SwapAndLiquify(half, newBalance, otherHalf);
     }
 
-    function swapTokensForEth(uint256 tokenAmount) private {
+    function swapTokensForBNB(uint256 tokenAmount) private {
         // generate the uniswap pair path of token -> WBNB
         address[] memory path = new address[](2);
         path[0] = address(this);
@@ -345,7 +351,7 @@ contract CrssToken is Context, IBEP20, Ownable {
             tokenAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
-            owner(),
+            address(this),
             block.timestamp
         );
     }
