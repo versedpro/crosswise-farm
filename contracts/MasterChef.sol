@@ -652,8 +652,8 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         crssPerBlock = _crssPerBlock;
     }
 
-    // Update the crss referral contract address by the owner
-    function setcrssReferral(ICrssReferral _crssReferral) public onlyOwner {
+    // Update the CRSS referral contract address by the owner
+    function setCrssReferral(ICrssReferral _crssReferral) public onlyOwner {
         crssReferral = _crssReferral;
         emit SetcrssReferral(address(_crssReferral));
     }
