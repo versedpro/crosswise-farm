@@ -215,14 +215,6 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         }
     }
     
-    // update crss reward count per block
-    function updateCrssPerBlock(uint256 _crssPerBlock) public onlyOwner {
-        require(_crssPerBlock != 0, "Reward token count per block can't be zero");
-        crssPerBlock = _crssPerBlock * 10 ** 18;
-        // emitts event when crssPerBlock updated
-        emit CrssPerBlockUpdated(_crssPerBlock * 10 ** 18);
-    }
-
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(uint256 _allocPoint, IBEP20 _lpToken, uint256 _depositFeeBP, address _strategy, bool _withUpdate) public onlyOwner {
@@ -660,8 +652,8 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         crssPerBlock = _crssPerBlock;
     }
 
-    // Update the crss referral contract address by the owner
-    function setcrssReferral(ICrssReferral _crssReferral) public onlyOwner {
+    // Update the CRSS referral contract address by the owner
+    function setCrssReferral(ICrssReferral _crssReferral) public onlyOwner {
         crssReferral = _crssReferral;
         emit SetcrssReferral(address(_crssReferral));
     }
