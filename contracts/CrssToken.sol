@@ -88,7 +88,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
         require(_buybackTo != address(0), 'CrssToken: buyback address is zero');
 
 
-        _name = 'Crosswise Token';
+        _name = 'Crosswise V1 Token';
         _symbol = 'CRSS';
         _decimals = 18;
 
