@@ -101,6 +101,9 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     // The block number when CRSS mining starts.
     uint256 public startBlock;
 
+    // Auto compouding Fee
+    uint256 public autoCompFee = 500;
+
     // Crss referral contract address.
     ICrssReferral public crssReferral;
     // Referral commission rate in basis points.
@@ -115,7 +118,9 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     event ReferralCommissionPaid(address indexed user, address indexed referrer, uint256 commissionAmount);
     event CrssPerBlockUpdated(uint256 crssPerBlock);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
+    event UpdateAutoCompFee(uint256 autoCompFee);
+    event SetcrssReferral(address indexed crssReferral);
+    event SetReferralCommissionRate(uint256 referralCommissionRate);
     constructor(
         CrssToken _crss,
         xCrssToken _xCrss,
@@ -276,22 +281,12 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         return amount.mul(accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
     }
     
-    // // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
-    // function massHarvest(uint256[] memory pools, bool isVest) public {
-    //     uint256 poolLength = pools.length;
-    //     address nulladdress = address(0);
-    //     for (uint256 i = 0; i < poolLength; i++) {
-    //         deposit(pools[i], 0, nulladdress, isVest);
-    //     }
-    // }
-
-    // // Stake All Rewards to stakepool all pools where user has pending balance at same time!  Be careful of gas spending!
-    // function massEarn(uint256[] memory pools) public {
-    //     uint256 poolLength = pools.length;
-    //     for (uint256 i = 0; i < poolLength; i++) {
-    //         earn(pools[i]);
-    //     }
-    // }
+    // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
+    function massHarvest(uint256[] memory pools) public {
+        for (uint256 i = 0; i < pools.length; i++) {
+            withdraw(pools[i], 0);
+        }
+    }
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
@@ -331,17 +326,15 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         updatePool(_pid);
         address[] memory users = autoAddressByPid[_pid].getAllAddresses();
         uint256 totalPending = leftCrss[_pid];
-        uint256 crssOldBalance = crss.balanceOf(address(this));
+        
         for(uint256 i = 0; i < users.length ; i++) {
             UserInfo storage user = userInfo[_pid][users[i]];
             uint256 amount = getUserDepositBalanceByPid(_pid, users[i]);
             uint256 pending = amount.mul(pool.accCrssPerShare).div(1e12).sub(user.rewardDebt).add(user.crssRewardLockedUp);
             if(user.isVest) {
-                uint256 crssReward = pending.div(2);
-                uint256 xCrssReward = pending.div(2);
-                totalPending = totalPending.add(crssReward);
-                crss.approve(address(xCrss), xCrssReward);
-                xCrss.depositToken(users[i], xCrssReward);
+                totalPending = totalPending.add(pending.div(2));
+                crss.approve(address(xCrss), pending.div(2));
+                xCrss.depositToken(users[i], pending.div(2));
             }
             else {
                 uint256 crssReward = pending.mul(75).div(100);
@@ -355,7 +348,10 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         }
 
         if (totalPending > 0) {
-
+            uint256 fee = totalPending.mul(autoCompFee).div(10000);
+            safeCrssTransfer(devAddress, fee);
+            uint256 crssOldBalance = crss.balanceOf(address(this));
+            totalPending = totalPending.sub(fee);
             crss.approve(address(crssRouterAddress), totalPending);
             
             ICrosswisePair pair = ICrosswisePair(address(pool.lpToken));
@@ -366,33 +362,13 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
             uint256 token1Amt = totalPending.div(2);
             if (address(crss) != token0) {
                 // Swap half earned to token0
-                address[] memory addrPair = new address[](2);
-                addrPair[0] = address(crss);
-                addrPair[1] = token0;
-                crssRouterAddress
-                    .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    totalPending.div(2),
-                    0,
-                    addrPair,
-                    address(this),
-                    now + routerDeadlineDuration
-                );
+                swapTokenForToken(address(crss), token0, totalPending.div(2));
                 token0Amt = IBEP20(token0).balanceOf(address(this));
             }
 
             if (address(crss) != token1) {
                 // Swap half earned to token1
-                address[] memory addrPair = new address[](2);
-                addrPair[0] = address(crss);
-                addrPair[1] = token1;
-                crssRouterAddress
-                    .swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                    totalPending.div(2),
-                    0,
-                    addrPair,
-                    address(this),
-                    now + routerDeadlineDuration
-                );
+                swapTokenForToken(address(crss), token1, totalPending.div(2));
                 token1Amt = IBEP20(token1).balanceOf(address(this));
             }
             
@@ -417,13 +393,17 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
                     address(this),
                     now + routerDeadlineDuration
                 );
-                uint256 newBalance = pool.lpToken.balanceOf(address(this));
-                totalLocked[_pid] = totalLocked[_pid].add(newBalance.sub(oldBalance));
-                uint256 crssNewBalance = crss.balanceOf(address(this));
-                if(crssOldBalance.sub(crssNewBalance) < totalPending) {
-                    leftCrss[_pid] = totalPending.add(crssNewBalance).sub(crssOldBalance);
-                } else {
-                    leftCrss[_pid] = 0;
+                {
+                    uint256 newBalance = pool.lpToken.balanceOf(address(this));
+                    updateLockedByPid(_pid, oldBalance.sub(newBalance));
+                }
+                {
+                    uint256 crssNewBalance = crss.balanceOf(address(this));
+                    if(crssOldBalance.sub(crssNewBalance) < totalPending) {
+                        updateLeftCrssByPid(_pid, totalPending.add(crssNewBalance).sub(crssOldBalance));
+                    } else {
+                        updateLeftCrssByPid(_pid, 0);
+                    }
                 }
             }
 
@@ -667,6 +647,12 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         treasuryAddress = _treasuryAddress;
     }
 
+    // Update auto compounding fee.
+    function updateAutoCompFee(uint256 _autoCompFee) public onlyOwner {
+        autoCompFee = _autoCompFee;
+        emit UpdateAutoCompFee(autoCompFee);
+    }
+
     // Crosswise has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
     function updateEmissionRate(uint256 _crssPerBlock) public onlyOwner {
         massUpdatePools();
@@ -677,12 +663,14 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     // Update the crss referral contract address by the owner
     function setcrssReferral(ICrssReferral _crssReferral) public onlyOwner {
         crssReferral = _crssReferral;
+        emit SetcrssReferral(address(_crssReferral));
     }
 
     // Update referral commission rate by the owner
     function setReferralCommissionRate(uint256 _referralCommissionRate) public onlyOwner {
         require(_referralCommissionRate <= MAXIMUM_REFERRAL_COMMISSION_RATE, "setReferralCommissionRate: invalid referral commission rate basis points");
         referralCommissionRate = _referralCommissionRate;
+        emit SetReferralCommissionRate(_referralCommissionRate);
     }
 
     // Pay referral commission to the referrer who referred this user.
@@ -711,5 +699,26 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
                 addr.removeAddress(_user);
             }
         }
+    }
+
+    function swapTokenForToken(address token0, address token1, uint256 amount) internal {
+        address[] memory addrPair = new address[](2);
+        addrPair[0] = token0;
+        addrPair[1] = token1;
+        crssRouterAddress
+            .swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            amount,
+            0,
+            addrPair,
+            address(this),
+            now + routerDeadlineDuration
+        );
+    }
+    function updateLockedByPid(uint256 _pid, uint256 _amount) internal {
+        totalLocked[_pid] = totalLocked[_pid].add(_amount);
+    }
+
+    function updateLeftCrssByPid(uint256 _pid, uint256 _amount) internal {
+        leftCrss[_pid] = _amount;
     }
 }
