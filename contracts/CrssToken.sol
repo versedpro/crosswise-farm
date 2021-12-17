@@ -414,7 +414,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
     * @param delegatee The address to delegate votes to
     */
     function delegate(address delegatee) external {
-        return _delegate(msg.sender, delegatee);
+        return _delegate(_msgSender(), delegatee);
     }
 
     /**
