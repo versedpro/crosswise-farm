@@ -121,6 +121,7 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     event UpdateAutoCompFee(uint256 autoCompFee);
     event SetcrssReferral(address indexed crssReferral);
     event SetReferralCommissionRate(uint256 referralCommissionRate);
+    event SetTrustedForwarder(address _trustedForwarder);
     constructor(
         CrssToken _crss,
         xCrssToken _xCrss,
@@ -665,6 +666,11 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         emit SetReferralCommissionRate(_referralCommissionRate);
     }
 
+    function setTrustedForwarder(address _trustedForwarder) external {
+        require(_trustedForwarder != address(0));
+        trustedForwarder = _trustedForwarder;
+        emit SetTrustedForwarder(_trustedForwarder);
+    }
     // Pay referral commission to the referrer who referred this user.
     function payReferralCommission(address _user, uint256 _pending) internal {
         if (address(crssReferral) != address(0) && referralCommissionRate > 0) {
