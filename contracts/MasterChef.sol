@@ -218,7 +218,7 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint256 _depositFeeBP, address _strategy, bool _withUpdate) public onlyOwner {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint256 _depositFeeBP, address _strategy, bool _withUpdate) external onlyOwner {
         require(_depositFeeBP <= 10000, "add: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -236,7 +236,7 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     }
 
     // Update the given pool's CRSS allocation point and deposit fee. Can only be called by the owner.
-    function set(uint256 _pid, uint256 _allocPoint, uint256 _depositFeeBP, address _strategy, bool _withUpdate) public onlyOwner {
+    function set(uint256 _pid, uint256 _allocPoint, uint256 _depositFeeBP, address _strategy, bool _withUpdate) external onlyOwner {
         require(_depositFeeBP <= 10000, "set: invalid deposit fee basis points");
         if (_withUpdate) {
             massUpdatePools();
@@ -275,11 +275,26 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     }
     
     // Harvest All Rewards pools where user has pending balance at same time!  Be careful of gas spending!
-    function massHarvest(uint256[] memory pools) public {
+    function massHarvest(uint256[] calldata pools) public {
         for (uint256 i = 0; i < pools.length; i++) {
             withdraw(pools[i], 0);
         }
     }
+
+    function massStakeReward(uint256[] calldata pools) external {
+        uint256 oldBalance = crss.balanceOf(_msgSender());
+
+        massHarvest(pools);
+
+        uint256 newBalance = crss.balanceOf(_msgSender());
+        uint256 amount = newBalance.sub(oldBalance);
+        UserInfo storage user = userInfo[0][_msgSender()];
+        if(user.amount > 0) {
+            deposit(0, amount, address(0), user.isVest, user.isAuto);    
+        } else {
+            deposit(0, amount, address(0), true, false);
+        }
+    } 
 
     // Update reward variables for all pools. Be careful of gas spending!
     function massUpdatePools() public {
@@ -313,7 +328,7 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         pool.lastRewardBlock = block.number;
     }
     // user can choose autoStake reward to stake pool instead just harvest
-    function earn(uint256 _pid) public {
+    function earn(uint256 _pid) external {
         PoolInfo storage pool = poolInfo[_pid];
         require(pool.strategy == address(0), "external pool");
         updatePool(_pid);
@@ -510,8 +525,8 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         emit Withdraw(_msgSender(), _pid, _amount);
     }
 
-    // Stake CAKE tokens to MasterChef
-    function enterStaking(uint256 _amount) public {
+    // Stake CRSS tokens to MasterChef
+    function enterStaking(uint256 _amount) external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[0][_msgSender()];
         updatePool(0);
@@ -535,8 +550,8 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
         emit Deposit(_msgSender(), 0, _amount);
     }
 
-    // Withdraw CAKE tokens from STAKING.
-    function leaveStaking(uint256 _amount) public {
+    // Withdraw CRSS tokens from STAKING.
+    function leaveStaking(uint256 _amount) external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[0][_msgSender()];
         require(user.amount >= _amount, "withdraw: not good");
@@ -628,39 +643,39 @@ contract MasterChef is ReentrancyGuard, BaseRelayRecipient {
     }
 
     // Update dev address by the previous dev.
-    function setDevAddress(address _devAddress) public {
+    function setDevAddress(address _devAddress) external {
         require(_msgSender() == devAddress, "setDevAddress: FORBIDDEN");
         require(_devAddress != address(0), "setDevAddress: ZERO");
         devAddress = _devAddress;
     }
 
-    function setTreasuryAddress(address _treasuryAddress) public {
+    function setTreasuryAddress(address _treasuryAddress) external {
         require(_msgSender() == treasuryAddress, "setTreasuryAddress: FORBIDDEN");
         require(_treasuryAddress != address(0), "setTreasuryAddress: ZERO");
         treasuryAddress = _treasuryAddress;
     }
 
     // Update auto compounding fee.
-    function updateAutoCompFee(uint256 _autoCompFee) public onlyOwner {
+    function updateAutoCompFee(uint256 _autoCompFee) external onlyOwner {
         autoCompFee = _autoCompFee;
         emit UpdateAutoCompFee(autoCompFee);
     }
 
     // Crosswise has to add hidden dummy pools in order to alter the emission, here we make it simple and transparent to all.
-    function updateEmissionRate(uint256 _crssPerBlock) public onlyOwner {
+    function updateEmissionRate(uint256 _crssPerBlock) external onlyOwner {
         massUpdatePools();
         emit EmissionRateUpdated(_msgSender(), crssPerBlock, _crssPerBlock);
         crssPerBlock = _crssPerBlock;
     }
 
     // Update the CRSS referral contract address by the owner
-    function setCrssReferral(ICrssReferral _crssReferral) public onlyOwner {
+    function setCrssReferral(ICrssReferral _crssReferral) external onlyOwner {
         crssReferral = _crssReferral;
         emit SetcrssReferral(address(_crssReferral));
     }
 
     // Update referral commission rate by the owner
-    function setReferralCommissionRate(uint256 _referralCommissionRate) public onlyOwner {
+    function setReferralCommissionRate(uint256 _referralCommissionRate) external onlyOwner {
         require(_referralCommissionRate <= MAXIMUM_REFERRAL_COMMISSION_RATE, "setReferralCommissionRate: invalid referral commission rate basis points");
         referralCommissionRate = _referralCommissionRate;
         emit SetReferralCommissionRate(_referralCommissionRate);
