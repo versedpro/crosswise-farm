@@ -37,6 +37,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
     address public devTo;
     address public buybackTo;
+    address public constant burnAddress = 0x000000000000000000000000000000000000dEaD;
 
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
@@ -44,6 +45,8 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
     ICrosswiseRouter02 public crosswiseRouter;
     address public crssBnbPair;
     
+    IBEP20 public oldCrss;
+
     mapping(address => bool) private _excludedFromAntiWhale;
     mapping(address => bool) whitelist;
 
@@ -82,11 +85,12 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
     constructor(
         address _devTo,
-        address _buybackTo
+        address _buybackTo,
+        IBEP20 _oldCrss
     ) public {
         require(_devTo != address(0), 'CrssToken: dev address is zero');
         require(_buybackTo != address(0), 'CrssToken: buyback address is zero');
-
+        require(address(_oldCrss) != address(0), 'CrssToken: old crss address is zero');
 
         _name = 'Crosswise V1 Token';
         _symbol = 'CRSS';
@@ -94,6 +98,8 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
         devTo = _devTo;
         buybackTo = _buybackTo;
+
+        oldCrss = _oldCrss;
 
         devFee = 4; // 0.04%
         liquidityFee = 3; // 0.03%
@@ -278,6 +284,12 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
         emit Transfer(sender, recipient, amount);
     }
 
+
+    function claimV1Token() external {
+        uint256 balance = oldCrss.balanceOf(_msgSender());
+        oldCrss.transferFrom(_msgSender(), burnAddress, balance);
+        mint(_msgSender(), balance);
+    }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
         swapAndLiquifyEnabled = _enabled;
