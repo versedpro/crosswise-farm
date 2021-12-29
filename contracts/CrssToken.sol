@@ -288,7 +288,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
     function claimV1Token() external {
         uint256 balance = oldCrss.balanceOf(_msgSender());
         oldCrss.transferFrom(_msgSender(), burnAddress, balance);
-        mint(_msgSender(), balance);
+        _mint(_msgSender(), balance);
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
