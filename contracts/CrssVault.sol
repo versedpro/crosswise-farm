@@ -126,11 +126,12 @@ contract CrssVault is ReentrancyGuard, BaseRelayRecipient {
 
         user.shares = user.shares.add(currentShares);
         user.lastDepositedTime = block.timestamp;
-
+        
         totalShares = totalShares.add(currentShares);
 
         user.CrssAtLastUserAction = user.shares.mul(balanceOf()).div(totalShares);
         user.lastUserActionTime = block.timestamp;
+        user.isVest = _isVest;
         userIndex(_msgSender());
         _earn();
 

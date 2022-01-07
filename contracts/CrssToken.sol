@@ -61,6 +61,9 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
     event SetWhiteList(address indexed addr, bool status);
     event Init_router(address indexed router);
     event SetMaxTransferAmountRate(uint256 maxTransferAmountRate);
+    event ClaimV1Token(address indexed user, uint256 balance);
+    event Mint(address indexed to, uint256 amount);
+    event SetExcludedFromAntiWhale(address indexed account, bool excluded);
 
     modifier lockTheSwap {
         inSwapAndLiquify = true;
@@ -106,7 +109,9 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
         buybackFee = 3; // 0.03%
 
         _excludedFromAntiWhale[msg.sender] = true;
-        _excludedFromAntiWhale[address(0)] = true;
+
+        // AUDIT : CTC-08 | Anti-whale Addresses
+        _excludedFromAntiWhale[burnAddress] = true;
         _excludedFromAntiWhale[address(this)] = true;
     }
     
@@ -202,7 +207,14 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
             ) {
                 uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
                 transferAmount = transferAmount.sub(liquidityAmount);
+
+                // AUDIT : CTC-10 | Liquidity Fee Calculation
+                amount = amount.sub(liquidityAmount);
+
                 _transfer(_msgSender(), address(this), liquidityAmount);
+                
+                // AUDIT : CTC-09 | Voting Power Not Moved Along With Liquify
+                _moveDelegates(_delegates[_msgSender()], _delegates[address(this)], liquidityAmount);
                 swapAndLiquify();
             }
 
@@ -248,7 +260,14 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
             ) {
                 uint256 liquidityAmount = amount.mul(liquidityFee).div(10000);
                 transferAmount = transferAmount.sub(liquidityAmount);
+
+                // AUDIT : CTC-10 | Liquidity Fee Calculation
+                amount = amount.sub(liquidityAmount);
+
                 _transfer(sender, address(this), liquidityAmount);
+
+                // AUDIT : CTC-09 | Voting Power Not Moved Along With Liquify
+                _moveDelegates(_delegates[sender], _delegates[address(this)], liquidityAmount);
                 swapAndLiquify();
             }
             if(recipient == crssBnbPair) {
@@ -286,9 +305,21 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
 
     function claimV1Token() external {
+        // AUDIT : CTC-07 | Discussion on claimV1Token() Function
+        // DEV : We get balance of msg.sender before transferFrom because of the fees.
         uint256 balance = oldCrss.balanceOf(_msgSender());
-        oldCrss.transferFrom(_msgSender(), burnAddress, balance);
+        
+        // AUDIT : CTC-01 | Return value not handled
+        bool success = oldCrss.transferFrom(_msgSender(), burnAddress, balance);
+        require(success, "Trasnfer token Failed");
+
         _mint(_msgSender(), balance);
+        
+        // AUDIT : CTC-06 | Does not move delegates while mint token
+        _moveDelegates(address(0), _delegates[_msgSender()], balance);
+
+        // AUDIT : CTC-03 | Missing Emit Events
+        emit ClaimV1Token(_msgSender(), balance);
     }
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
@@ -358,7 +389,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
         _approve(address(this), address(crosswiseRouter), tokenAmount);
 
         // add the liquidity
-        crosswiseRouter.addLiquidityETH{value: ethAmount}(
+        (,,uint liquidity) = crosswiseRouter.addLiquidityETH{value: ethAmount}(
             address(this),
             tokenAmount,
             0, // slippage is unavoidable
@@ -366,12 +397,18 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
             address(this),
             block.timestamp
         );
+
+        // AUDIT : CTC-01 | Return value not handled
+        require(liquidity > 0, "Add liquidity failed");
     }
 
     /// @dev Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
     function mint(address _to, uint256 _amount) public onlyOwner {
         _mint(_to, _amount);
         _moveDelegates(address(0), _delegates[_to], _amount);
+
+        // AUDIT : CTC-03 | Missing Emit Events
+        emit Mint(_to, _amount);
     }
     // Copied and modified from YAM code:
     // https://github.com/yam-finance/yam-protocol/blob/master/contracts/token/YAMGovernanceStorage.sol
@@ -602,6 +639,8 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
     function setExcludedFromAntiWhale(address _account, bool _excluded) public onlyOwner {
         _excludedFromAntiWhale[_account] = _excluded;
+        // AUDIT : CTC-03 | Missing Emit Events
+        emit SetExcludedFromAntiWhale(_account, _excluded);
     }
 
     function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
