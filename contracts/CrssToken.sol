@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 // CrssToken with Governance.
-contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
+contract CrssToken is IBEP20, Ownable, Initializable {
 
     using SafeMath for uint256;
     using Address for address;
