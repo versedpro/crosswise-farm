@@ -11,7 +11,7 @@ import './interface/ICrosswiseFactory.sol';
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 // CrssToken with Governance.
 contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
 
@@ -187,7 +187,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
     }
 
     
-    function transfer(address recipient, uint256 amount) public override antiWhale(_msgSender(), recipient, amount) nonReentrant returns (bool) {
+    function transfer(address recipient, uint256 amount) public override antiWhale(_msgSender(), recipient, amount) returns (bool) {
         require(recipient != address(0), "BEP20: transfer to the zero address");
         require(balanceOf(_msgSender()) >= amount, "BEP20: transfer amount exceeds balance");
 
@@ -241,7 +241,7 @@ contract CrssToken is IBEP20, Ownable, Initializable, ReentrancyGuard {
         address sender,
         address recipient,
         uint256 amount
-    ) public override antiWhale(sender, recipient, amount) nonReentrant returns (bool) {
+    ) public override antiWhale(sender, recipient, amount) returns (bool) {
         require(sender != address(0), "BEP20: transfer to the zero address");
         require(recipient != address(0), "BEP20: transfer to the zero address");
 
